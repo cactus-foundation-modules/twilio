@@ -1,9 +1,9 @@
 {
   "name": "twilio",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding for your Twilio numbers and SMS login codes for admins and members.",
-  "requiresCoreVersion": "0.5.295",
+  "requiresCoreVersion": "0.5.303",
   "requiredEnvVars": [
     { "name": "TWILIO_ACCOUNT_SID", "required": false },
     { "name": "TWILIO_AUTH_TOKEN", "required": false },
@@ -22,7 +22,8 @@
     { "id": "twilio", "label": "Twilio SMS", "import": "./lib/sms-provider", "export": "twilioSmsProvider" }
   ],
   "extensionPoints": [
-    { "point": "members.account-section", "id": "twilio-sms-2fa", "import": "./components/public/TwilioMemberSmsSection", "component": "TwilioMemberSmsSection" }
+    { "point": "members.account-section", "id": "twilio-sms-2fa", "import": "./components/public/TwilioMemberSmsSection", "component": "TwilioMemberSmsSection" },
+    { "point": "admins.account-section", "id": "twilio-sms-2fa-admin", "import": "./components/admin/TwilioAdminSmsSection", "component": "TwilioAdminSmsSection" }
   ],
   "teardown": [
     "tw_forwarding_rules",

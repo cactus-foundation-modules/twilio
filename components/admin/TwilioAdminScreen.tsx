@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import SmsTwoFactorCard from '@/modules/twilio/components/SmsTwoFactorCard'
 import { TWILIO_VOICES } from '@/modules/twilio/lib/voices'
 
 type NumberRow = {
@@ -237,12 +236,6 @@ export default function TwilioAdminScreen() {
           </div>
         )}
       </div>
-
-      <SmsTwoFactorCard
-        endpoint="/api/m/twilio/admin/sms-2fa"
-        title="SMS login codes"
-        description="Get your sign-in codes by text message instead of email when logging in with your password."
-      />
     </div>
   )
 }
