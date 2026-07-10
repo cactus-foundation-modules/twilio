@@ -82,6 +82,25 @@ export async function listIncomingNumbers(): Promise<IncomingNumber[]> {
   }))
 }
 
+// Escapes text for embedding in TwiML (e.g. inside <Say>).
+export function escapeXml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+// Places an outbound call that plays the given TwiML - used to preview the
+// forwarding greeting. `from` must be a Twilio number on the account.
+export async function placeCall(to: string, from: string, twiml: string): Promise<void> {
+  await twilioFetch('/Calls.json', {
+    method: 'POST',
+    form: { To: to, From: from, Twiml: twiml },
+  })
+}
+
 // Points the number's voice webhook at `url`, or clears it when url is empty.
 export async function setNumberVoiceUrl(sid: string, url: string): Promise<void> {
   await twilioFetch(`/IncomingPhoneNumbers/${encodeURIComponent(sid)}.json`, {

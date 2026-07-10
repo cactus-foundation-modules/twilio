@@ -29,6 +29,9 @@ export async function GET() {
           voiceUrl: n.voiceUrl,
           forwardTo: rule?.forwardTo ?? '',
           forwardingEnabled: rule?.enabled ?? false,
+          greetingMessage: rule?.greetingMessage ?? '',
+          greetingVoice: rule?.greetingVoice ?? '',
+          recordCalls: rule?.recordCalls ?? false,
         }
       }),
     })

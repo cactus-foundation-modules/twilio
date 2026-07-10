@@ -4,7 +4,7 @@
 // the caller).
 import { NextRequest, NextResponse } from 'next/server'
 import { getSiteUrl } from '@/lib/config/env'
-import { validateTwilioSignature, isTwilioConfigured } from '@/modules/twilio/lib/twilio'
+import { validateTwilioSignature, isTwilioConfigured, escapeXml } from '@/modules/twilio/lib/twilio'
 import { getEnabledRuleForNumber } from '@/modules/twilio/lib/forwarding'
 
 function twiml(inner: string): NextResponse {
@@ -36,7 +36,15 @@ export async function POST(request: NextRequest) {
   // E.164 targets only ever contain + and digits, so no XML escaping needed -
   // normalisePhone enforced that on the way in.
   if (rule?.forwardTo && /^\+[1-9]\d{7,14}$/.test(rule.forwardTo)) {
-    return twiml(`<Dial>${rule.forwardTo}</Dial>`)
+    // Optional greeting before the dial. Voice ids were validated against the
+    // curated list on save, but only ever contain [A-Za-z.-] anyway.
+    let greeting = ''
+    if (rule.greetingMessage) {
+      const voiceAttr = rule.greetingVoice ? ` voice="${rule.greetingVoice}"` : ''
+      greeting = `<Say${voiceAttr}>${escapeXml(rule.greetingMessage)}</Say>`
+    }
+    const recordAttr = rule.recordCalls ? ' record="record-from-answer-dual"' : ''
+    return twiml(`${greeting}<Dial${recordAttr}>${rule.forwardTo}</Dial>`)
   }
   return twiml('<Reject/>')
 }

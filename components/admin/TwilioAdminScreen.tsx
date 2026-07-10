@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import SmsTwoFactorCard from '@/modules/twilio/components/SmsTwoFactorCard'
+import { TWILIO_VOICES } from '@/modules/twilio/lib/voices'
 
 type NumberRow = {
   sid: string
@@ -10,7 +11,12 @@ type NumberRow = {
   voiceUrl: string
   forwardTo: string
   forwardingEnabled: boolean
+  greetingMessage: string
+  greetingVoice: string
+  recordCalls: boolean
 }
+
+const VOICE_GROUPS = [...new Set(TWILIO_VOICES.map((v) => v.group))]
 
 export default function TwilioAdminScreen() {
   const [numbers, setNumbers] = useState<NumberRow[]>([])
@@ -19,6 +25,9 @@ export default function TwilioAdminScreen() {
   const [error, setError] = useState('')
   const [savingSid, setSavingSid] = useState('')
   const [savedSid, setSavedSid] = useState('')
+  const [previewTo, setPreviewTo] = useState('')
+  const [previewingSid, setPreviewingSid] = useState('')
+  const [previewCalledSid, setPreviewCalledSid] = useState('')
 
   useEffect(() => {
     fetch('/api/m/twilio/admin/numbers')
@@ -52,6 +61,9 @@ export default function TwilioAdminScreen() {
           phoneNumber: row.phoneNumber,
           forwardTo: row.forwardTo,
           enabled: row.forwardingEnabled,
+          greetingMessage: row.greetingMessage,
+          greetingVoice: row.greetingVoice,
+          recordCalls: row.recordCalls,
         }),
       })
       const d = await res.json()
@@ -61,6 +73,31 @@ export default function TwilioAdminScreen() {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSavingSid('')
+    }
+  }
+
+  async function previewGreeting(row: NumberRow) {
+    setPreviewingSid(row.sid)
+    setPreviewCalledSid('')
+    setError('')
+    try {
+      const res = await fetch('/api/m/twilio/admin/greeting-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: row.phoneNumber,
+          to: previewTo,
+          greetingMessage: row.greetingMessage,
+          greetingVoice: row.greetingVoice,
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Failed to place preview call')
+      setPreviewCalledSid(row.sid)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to place preview call')
+    } finally {
+      setPreviewingSid('')
     }
   }
 
@@ -120,6 +157,74 @@ export default function TwilioAdminScreen() {
                   />
                   Forwarding on
                 </label>
+                <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)' }}>
+                  <div className="field" style={{ margin: 0, flex: '2 1 20rem' }}>
+                    <label>Greeting played before forwarding (optional)</label>
+                    <textarea
+                      rows={2}
+                      maxLength={500}
+                      value={row.greetingMessage}
+                      placeholder="Thank you for calling. Calls are recorded."
+                      onChange={(e) => updateRow(row.sid, { greetingMessage: e.target.value })}
+                    />
+                  </div>
+                  <div className="field" style={{ margin: 0, flex: '1 1 12rem' }}>
+                    <label>Greeting voice</label>
+                    <select
+                      value={row.greetingVoice}
+                      onChange={(e) => updateRow(row.sid, { greetingVoice: e.target.value })}
+                    >
+                      {VOICE_GROUPS.map((group) =>
+                        group === 'Default' ? (
+                          TWILIO_VOICES.filter((v) => v.group === group).map((v) => (
+                            <option key={v.id} value={v.id}>{v.label}</option>
+                          ))
+                        ) : (
+                          <optgroup key={group} label={group}>
+                            {TWILIO_VOICES.filter((v) => v.group === group).map((v) => (
+                              <option key={v.id} value={v.id}>{v.label}</option>
+                            ))}
+                          </optgroup>
+                        )
+                      )}
+                    </select>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', color: 'var(--color-text)', paddingBottom: 'var(--space-2)' }}>
+                    <input
+                      type="checkbox"
+                      checked={row.recordCalls}
+                      onChange={(e) => updateRow(row.sid, { recordCalls: e.target.checked })}
+                    />
+                    Record calls
+                  </label>
+                </div>
+                {row.greetingMessage.trim() && (
+                  <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)' }}>
+                    <div className="field" style={{ margin: 0, flex: '1 1 14rem' }}>
+                      <label>Hear it first - we ring you and read it out</label>
+                      <input
+                        type="tel"
+                        value={previewTo}
+                        placeholder="+447700900123"
+                        onChange={(e) => setPreviewTo(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="btn btn-secondary"
+                      disabled={previewingSid === row.sid || !previewTo}
+                      onClick={() => previewGreeting(row)}
+                    >
+                      {previewingSid === row.sid ? 'Calling…' : previewCalledSid === row.sid ? 'Calling you now' : 'Call me to preview'}
+                    </button>
+                  </div>
+                )}
+                {row.recordCalls && (
+                  <p style={{ flexBasis: '100%', margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+                    Recordings are kept in your Twilio console, not on this site. Telling callers
+                    they are being recorded is your responsibility - the greeting above is a handy
+                    place to do it.
+                  </p>
+                )}
                 <button
                   className="btn btn-primary"
                   disabled={savingSid === row.sid || (row.forwardingEnabled && !row.forwardTo)}

@@ -13,6 +13,11 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     "phone_number" TEXT         NOT NULL,
     "forward_to"   TEXT         NOT NULL DEFAULT '',
     "enabled"      BOOLEAN      NOT NULL DEFAULT false,
+    -- Optional greeting read out (Twilio <Say>) before the call is dialled
+    -- through, and whether Twilio records the forwarded leg.
+    "greeting_message" TEXT     NOT NULL DEFAULT '',
+    "greeting_voice"   TEXT     NOT NULL DEFAULT '',
+    "record_calls"     BOOLEAN  NOT NULL DEFAULT false,
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")
