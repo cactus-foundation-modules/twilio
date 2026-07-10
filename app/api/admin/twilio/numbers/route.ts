@@ -32,6 +32,7 @@ export async function GET() {
           greetingMessage: rule?.greetingMessage ?? '',
           greetingVoice: rule?.greetingVoice ?? '',
           recordCalls: rule?.recordCalls ?? false,
+          showCalledNumber: rule?.showCalledNumber ?? false,
         }
       }),
     })

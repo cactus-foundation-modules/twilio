@@ -18,6 +18,9 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     "greeting_message" TEXT     NOT NULL DEFAULT '',
     "greeting_voice"   TEXT     NOT NULL DEFAULT '',
     "record_calls"     BOOLEAN  NOT NULL DEFAULT false,
+    -- When true, the forwarded leg shows the site's Twilio number as caller
+    -- ID instead of the original caller's number.
+    "show_called_number" BOOLEAN NOT NULL DEFAULT false,
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")

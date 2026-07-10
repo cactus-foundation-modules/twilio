@@ -44,7 +44,12 @@ export async function POST(request: NextRequest) {
       greeting = `<Say${voiceAttr}>${escapeXml(rule.greetingMessage)}</Say>`
     }
     const recordAttr = rule.recordCalls ? ' record="record-from-answer-dual"' : ''
-    return twiml(`${greeting}<Dial${recordAttr}>${rule.forwardTo}</Dial>`)
+    // Optionally present the called Twilio number as caller ID on the
+    // forwarded leg (allowed - the account owns it). Same E.164 shape as
+    // forwardTo, so no XML escaping needed either.
+    const callerIdAttr =
+      rule.showCalledNumber && /^\+[1-9]\d{7,14}$/.test(called) ? ` callerId="${called}"` : ''
+    return twiml(`${greeting}<Dial${recordAttr}${callerIdAttr}>${rule.forwardTo}</Dial>`)
   }
   return twiml('<Reject/>')
 }

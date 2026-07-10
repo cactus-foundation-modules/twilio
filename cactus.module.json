@@ -1,6 +1,6 @@
 {
   "name": "twilio",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding for your Twilio numbers and SMS login codes for admins and members.",
   "requiresCoreVersion": "0.5.303",

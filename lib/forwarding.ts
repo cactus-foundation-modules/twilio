@@ -9,6 +9,7 @@ export type ForwardingRule = {
   greetingMessage: string
   greetingVoice: string
   recordCalls: boolean
+  showCalledNumber: boolean
 }
 
 function mapRow(r: Record<string, unknown>): ForwardingRule {
@@ -21,13 +22,14 @@ function mapRow(r: Record<string, unknown>): ForwardingRule {
     greetingMessage: r.greeting_message as string,
     greetingVoice: r.greeting_voice as string,
     recordCalls: r.record_calls as boolean,
+    showCalledNumber: r.show_called_number as boolean,
   }
 }
 
 export async function getForwardingRules(): Promise<ForwardingRule[]> {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT id, phone_sid, phone_number, forward_to, enabled,
-           greeting_message, greeting_voice, record_calls
+           greeting_message, greeting_voice, record_calls, show_called_number
     FROM "tw_forwarding_rules"
   `
   return rows.map(mapRow)
@@ -36,7 +38,7 @@ export async function getForwardingRules(): Promise<ForwardingRule[]> {
 export async function getEnabledRuleForNumber(phoneNumber: string): Promise<ForwardingRule | null> {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT id, phone_sid, phone_number, forward_to, enabled,
-           greeting_message, greeting_voice, record_calls
+           greeting_message, greeting_voice, record_calls, show_called_number
     FROM "tw_forwarding_rules"
     WHERE phone_number = ${phoneNumber} AND enabled = true
     LIMIT 1
@@ -53,12 +55,13 @@ export async function upsertForwardingRule(input: {
   greetingMessage: string
   greetingVoice: string
   recordCalls: boolean
+  showCalledNumber: boolean
 }): Promise<void> {
   await prisma.$executeRaw`
     INSERT INTO "tw_forwarding_rules"
-      (phone_sid, phone_number, forward_to, enabled, greeting_message, greeting_voice, record_calls, updated_at)
+      (phone_sid, phone_number, forward_to, enabled, greeting_message, greeting_voice, record_calls, show_called_number, updated_at)
     VALUES (${input.phoneSid}, ${input.phoneNumber}, ${input.forwardTo}, ${input.enabled},
-            ${input.greetingMessage}, ${input.greetingVoice}, ${input.recordCalls}, CURRENT_TIMESTAMP)
+            ${input.greetingMessage}, ${input.greetingVoice}, ${input.recordCalls}, ${input.showCalledNumber}, CURRENT_TIMESTAMP)
     ON CONFLICT (phone_sid) DO UPDATE SET
       phone_number     = EXCLUDED.phone_number,
       forward_to       = EXCLUDED.forward_to,
@@ -66,6 +69,7 @@ export async function upsertForwardingRule(input: {
       greeting_message = EXCLUDED.greeting_message,
       greeting_voice   = EXCLUDED.greeting_voice,
       record_calls     = EXCLUDED.record_calls,
+      show_called_number = EXCLUDED.show_called_number,
       updated_at       = CURRENT_TIMESTAMP
   `
 }

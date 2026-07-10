@@ -13,6 +13,7 @@ type NumberRow = {
   greetingMessage: string
   greetingVoice: string
   recordCalls: boolean
+  showCalledNumber: boolean
 }
 
 const VOICE_GROUPS = [...new Set(TWILIO_VOICES.map((v) => v.group))]
@@ -63,6 +64,7 @@ export default function TwilioAdminScreen() {
           greetingMessage: row.greetingMessage,
           greetingVoice: row.greetingVoice,
           recordCalls: row.recordCalls,
+          showCalledNumber: row.showCalledNumber,
         }),
       })
       const d = await res.json()
@@ -196,7 +198,22 @@ export default function TwilioAdminScreen() {
                     />
                     Record calls
                   </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', color: 'var(--color-text)', paddingBottom: 'var(--space-2)' }}>
+                    <input
+                      type="checkbox"
+                      checked={row.showCalledNumber}
+                      onChange={(e) => updateRow(row.sid, { showCalledNumber: e.target.checked })}
+                    />
+                    Show this number as caller ID
+                  </label>
                 </div>
+                {row.showCalledNumber && (
+                  <p style={{ flexBasis: '100%', margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+                    Forwarded calls will display {row.phoneNumber} instead of the caller&apos;s own
+                    number - handy for knowing it came through this line, but you won&apos;t see who
+                    actually rang until you answer.
+                  </p>
+                )}
                 {row.greetingMessage.trim() && (
                   <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)' }}>
                     <div className="field" style={{ margin: 0, flex: '1 1 14rem' }}>

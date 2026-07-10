@@ -19,6 +19,7 @@ const Body = z.object({
   greetingMessage: z.string().max(500).default(''),
   greetingVoice: z.string().default(''),
   recordCalls: z.boolean().default(false),
+  showCalledNumber: z.boolean().default(false),
 })
 
 export async function PUT(request: NextRequest) {
@@ -32,7 +33,7 @@ export async function PUT(request: NextRequest) {
 
   const parsed = Body.safeParse(await request.json())
   if (!parsed.success) return errorResponse('Invalid input')
-  const { phoneSid, phoneNumber, enabled, recordCalls } = parsed.data
+  const { phoneSid, phoneNumber, enabled, recordCalls, showCalledNumber } = parsed.data
 
   const greetingMessage = parsed.data.greetingMessage.trim()
   const greetingVoice = parsed.data.greetingVoice
@@ -57,7 +58,7 @@ export async function PUT(request: NextRequest) {
     // webhook when disabled so the number reverts to Twilio's default handling.
     const webhookUrl = `${getSiteUrl()}/api/m/twilio/webhooks/voice`
     await setNumberVoiceUrl(phoneSid, enabled ? webhookUrl : '')
-    await upsertForwardingRule({ phoneSid, phoneNumber, forwardTo, enabled, greetingMessage, greetingVoice, recordCalls })
+    await upsertForwardingRule({ phoneSid, phoneNumber, forwardTo, enabled, greetingMessage, greetingVoice, recordCalls, showCalledNumber })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to update forwarding', 502)
