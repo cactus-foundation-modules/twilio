@@ -91,6 +91,122 @@ export async function listIncomingNumbers(): Promise<IncomingNumber[]> {
   }))
 }
 
+export type CallLogEntry = {
+  sid: string
+  from: string
+  to: string
+  direction: 'inbound' | 'outbound'
+  status: string
+  startTime: string
+  durationSeconds: number
+  recordingSids: string[]
+}
+
+// Calls to and from a number, newest first. Two filtered listings merged -
+// the Calls resource only filters on one of To/From per request. Recordings
+// are attached from a single account-wide listing keyed by call SID.
+export async function listCallsForNumber(phoneNumber: string, limit = 50): Promise<CallLogEntry[]> {
+  type RawCall = {
+    sid: string
+    from: string
+    to: string
+    direction: string
+    status: string
+    start_time: string | null
+    date_created: string | null
+    duration: string | null
+  }
+  const [toData, fromData, recData] = await Promise.all([
+    twilioFetch(`/Calls.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`),
+    twilioFetch(`/Calls.json?PageSize=${limit}&From=${encodeURIComponent(phoneNumber)}`),
+    twilioFetch('/Recordings.json?PageSize=200'),
+  ]) as [{ calls?: RawCall[] }, { calls?: RawCall[] }, { recordings?: Array<{ sid: string; call_sid: string; status: string }> }]
+
+  const recordingsByCall = new Map<string, string[]>()
+  for (const r of recData.recordings ?? []) {
+    if (r.status !== 'completed') continue
+    const list = recordingsByCall.get(r.call_sid) ?? []
+    list.push(r.sid)
+    recordingsByCall.set(r.call_sid, list)
+  }
+
+  const bySid = new Map<string, RawCall>()
+  for (const c of [...(toData.calls ?? []), ...(fromData.calls ?? [])]) bySid.set(c.sid, c)
+
+  return [...bySid.values()]
+    .map((c) => ({
+      sid: c.sid,
+      from: c.from,
+      to: c.to,
+      direction: c.direction.startsWith('outbound') ? 'outbound' as const : 'inbound' as const,
+      status: c.status,
+      startTime: c.start_time ?? c.date_created ?? '',
+      durationSeconds: c.duration ? parseInt(c.duration, 10) || 0 : 0,
+      recordingSids: recordingsByCall.get(c.sid) ?? [],
+    }))
+    .sort((a, b) => Date.parse(b.startTime || '0') - Date.parse(a.startTime || '0'))
+    .slice(0, limit)
+}
+
+export type MessageLogEntry = {
+  sid: string
+  from: string
+  to: string
+  direction: 'inbound' | 'outbound'
+  status: string
+  dateSent: string
+  body: string
+}
+
+// Texts to and from a number, newest first. Same merge-two-listings shape as
+// listCallsForNumber.
+export async function listMessagesForNumber(phoneNumber: string, limit = 50): Promise<MessageLogEntry[]> {
+  type RawMessage = {
+    sid: string
+    from: string
+    to: string
+    direction: string
+    status: string
+    date_sent: string | null
+    date_created: string | null
+    body: string
+  }
+  const [toData, fromData] = await Promise.all([
+    twilioFetch(`/Messages.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`),
+    twilioFetch(`/Messages.json?PageSize=${limit}&From=${encodeURIComponent(phoneNumber)}`),
+  ]) as [{ messages?: RawMessage[] }, { messages?: RawMessage[] }]
+
+  const bySid = new Map<string, RawMessage>()
+  for (const m of [...(toData.messages ?? []), ...(fromData.messages ?? [])]) bySid.set(m.sid, m)
+
+  return [...bySid.values()]
+    .map((m) => ({
+      sid: m.sid,
+      from: m.from,
+      to: m.to,
+      direction: m.direction === 'inbound' ? 'inbound' as const : 'outbound' as const,
+      status: m.status,
+      dateSent: m.date_sent ?? m.date_created ?? '',
+      body: m.body,
+    }))
+    .sort((a, b) => Date.parse(b.dateSent || '0') - Date.parse(a.dateSent || '0'))
+    .slice(0, limit)
+}
+
+// Streams a recording's MP3 with the account's basic-auth credentials so the
+// browser never sees them. Twilio recording media URLs are auth-protected.
+export async function fetchRecordingAudio(recordingSid: string): Promise<Response> {
+  const config = getTwilioConfig()
+  if (!config) throw new Error('Twilio is not configured')
+  return fetch(
+    `${API_BASE}/Accounts/${config.accountSid}/Recordings/${encodeURIComponent(recordingSid)}.mp3`,
+    {
+      headers: { Authorization: authHeader(config.accountSid, config.authToken) },
+      signal: AbortSignal.timeout(30_000),
+    }
+  )
+}
+
 // Escapes text for embedding in TwiML (e.g. inside <Say>).
 export function escapeXml(text: string): string {
   return text

@@ -6,6 +6,7 @@
 // numbers are picked from the connected account rather than typed in - texts
 // only ever go out from a text-capable number the admin has added to the site.
 import { useEffect, useState } from 'react'
+import { TwilioForwardingSection } from './TwilioForwardingSection'
 
 const ENV_KEYS = [
   { key: 'TWILIO_ACCOUNT_SID', label: 'Account SID', placeholder: 'AC…', secret: false },
@@ -284,6 +285,8 @@ export function TwilioSettingsTab() {
           )}
         </div>
       )}
+
+      {connected && <TwilioForwardingSection />}
     </div>
   )
 }
