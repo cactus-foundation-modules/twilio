@@ -1,0 +1,143 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import SmsTwoFactorCard from '@/modules/twilio/components/SmsTwoFactorCard'
+
+type NumberRow = {
+  sid: string
+  phoneNumber: string
+  friendlyName: string
+  voiceUrl: string
+  forwardTo: string
+  forwardingEnabled: boolean
+}
+
+export default function TwilioAdminScreen() {
+  const [numbers, setNumbers] = useState<NumberRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [notConfigured, setNotConfigured] = useState(false)
+  const [error, setError] = useState('')
+  const [savingSid, setSavingSid] = useState('')
+  const [savedSid, setSavedSid] = useState('')
+
+  useEffect(() => {
+    fetch('/api/m/twilio/admin/numbers')
+      .then(async (res) => {
+        const d = await res.json()
+        if (res.status === 503) {
+          setNotConfigured(true)
+          return
+        }
+        if (!res.ok) throw new Error(d.error ?? 'Failed to load numbers')
+        setNumbers(d.numbers)
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load numbers'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  function updateRow(sid: string, patch: Partial<NumberRow>) {
+    setNumbers((rows) => rows.map((r) => (r.sid === sid ? { ...r, ...patch } : r)))
+  }
+
+  async function saveRow(row: NumberRow) {
+    setSavingSid(row.sid)
+    setSavedSid('')
+    setError('')
+    try {
+      const res = await fetch('/api/m/twilio/admin/forwarding', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneSid: row.sid,
+          phoneNumber: row.phoneNumber,
+          forwardTo: row.forwardTo,
+          enabled: row.forwardingEnabled,
+        }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Failed to save')
+      setSavedSid(row.sid)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSavingSid('')
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+      <div className="card">
+        <h2 className="card-title">Call forwarding</h2>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
+          Choose where each of your Twilio numbers forwards incoming calls. When forwarding is
+          off, the number reverts to whatever it did before.
+        </p>
+
+        {error && <div className="alert alert-danger">{error}</div>}
+
+        {notConfigured ? (
+          <div className="alert alert-warning">
+            Twilio is not configured yet. Add your credentials on the Settings page (Twilio tab),
+            redeploy, then come back here.
+          </div>
+        ) : loading ? (
+          <p style={{ color: 'var(--color-text-muted)' }}>Loading numbers…</p>
+        ) : numbers.length === 0 ? (
+          <p style={{ color: 'var(--color-text-muted)' }}>No phone numbers found on this Twilio account.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            {numbers.map((row) => (
+              <div
+                key={row.sid}
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'flex-end',
+                  gap: 'var(--space-4)',
+                  padding: 'var(--space-4)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                }}
+              >
+                <div style={{ minWidth: '12rem' }}>
+                  <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--color-text)' }}>{row.phoneNumber}</div>
+                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>{row.friendlyName}</div>
+                </div>
+                <div className="field" style={{ margin: 0, flex: '1 1 14rem' }}>
+                  <label>Forward calls to</label>
+                  <input
+                    type="tel"
+                    value={row.forwardTo}
+                    placeholder="+447700900123"
+                    onChange={(e) => updateRow(row.sid, { forwardTo: e.target.value })}
+                  />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', color: 'var(--color-text)', paddingBottom: 'var(--space-2)' }}>
+                  <input
+                    type="checkbox"
+                    checked={row.forwardingEnabled}
+                    onChange={(e) => updateRow(row.sid, { forwardingEnabled: e.target.checked })}
+                  />
+                  Forwarding on
+                </label>
+                <button
+                  className="btn btn-primary"
+                  disabled={savingSid === row.sid || (row.forwardingEnabled && !row.forwardTo)}
+                  onClick={() => saveRow(row)}
+                >
+                  {savingSid === row.sid ? 'Saving…' : savedSid === row.sid ? 'Saved' : 'Save'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <SmsTwoFactorCard
+        endpoint="/api/m/twilio/admin/sms-2fa"
+        title="SMS login codes"
+        description="Get your sign-in codes by text message instead of email when logging in with your password."
+      />
+    </div>
+  )
+}
