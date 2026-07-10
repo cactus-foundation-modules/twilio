@@ -5,12 +5,11 @@ import { createHmac, timingSafeEqual } from 'crypto'
 
 const API_BASE = 'https://api.twilio.com/2010-04-01'
 
-export function getTwilioConfig(): { accountSid: string; authToken: string; fromNumber: string } | null {
+export function getTwilioConfig(): { accountSid: string; authToken: string } | null {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   const authToken = process.env.TWILIO_AUTH_TOKEN
-  const fromNumber = process.env.TWILIO_PHONE_NUMBER
-  if (!accountSid || !authToken || !fromNumber) return null
-  return { accountSid, authToken, fromNumber }
+  if (!accountSid || !authToken) return null
+  return { accountSid, authToken }
 }
 
 export function isTwilioConfigured(): boolean {
@@ -54,12 +53,12 @@ export async function fetchAccountName(): Promise<string> {
   return data.friendly_name ?? 'Twilio account'
 }
 
-export async function sendSms(to: string, body: string): Promise<void> {
-  const config = getTwilioConfig()
-  if (!config) throw new Error('Twilio is not configured')
+// `from` must be an SMS-capable Twilio number on the account - callers go
+// through lib/numbers.ts sendSiteSms, which resolves the site's default.
+export async function sendSms(to: string, body: string, from: string): Promise<void> {
   await twilioFetch('/Messages.json', {
     method: 'POST',
-    form: { To: to, From: config.fromNumber, Body: body },
+    form: { To: to, From: from, Body: body },
   })
 }
 
@@ -68,17 +67,27 @@ export type IncomingNumber = {
   phoneNumber: string
   friendlyName: string
   voiceUrl: string
+  smsCapable: boolean
+  voiceCapable: boolean
 }
 
 export async function listIncomingNumbers(): Promise<IncomingNumber[]> {
   const data = await twilioFetch('/IncomingPhoneNumbers.json?PageSize=100') as {
-    incoming_phone_numbers?: Array<{ sid: string; phone_number: string; friendly_name: string; voice_url: string | null }>
+    incoming_phone_numbers?: Array<{
+      sid: string
+      phone_number: string
+      friendly_name: string
+      voice_url: string | null
+      capabilities?: { voice?: boolean; sms?: boolean }
+    }>
   }
   return (data.incoming_phone_numbers ?? []).map((n) => ({
     sid: n.sid,
     phoneNumber: n.phone_number,
     friendlyName: n.friendly_name,
     voiceUrl: n.voice_url ?? '',
+    smsCapable: n.capabilities?.sms === true,
+    voiceCapable: n.capabilities?.voice === true,
   }))
 }
 

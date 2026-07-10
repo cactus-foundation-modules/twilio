@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
-import { isTwilioConfigured, fetchAccountName, getTwilioConfig } from '@/modules/twilio/lib/twilio'
+import { isTwilioConfigured, fetchAccountName } from '@/modules/twilio/lib/twilio'
+import { getDefaultSmsNumber } from '@/modules/twilio/lib/numbers'
 
 export async function GET() {
   const user = await getSessionFromCookie()
@@ -15,12 +16,15 @@ export async function GET() {
   }
 
   try {
-    const accountName = await fetchAccountName()
+    const [accountName, fromNumber] = await Promise.all([
+      fetchAccountName(),
+      getDefaultSmsNumber(),
+    ])
     return NextResponse.json({
       configured: true,
       connected: true,
       accountName,
-      fromNumber: getTwilioConfig()?.fromNumber ?? '',
+      fromNumber: fromNumber ?? '',
     })
   } catch (err) {
     return NextResponse.json({

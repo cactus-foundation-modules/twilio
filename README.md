@@ -4,8 +4,10 @@ Twilio integration module for [Cactus](https://github.com/usersaynoso/cactus-fou
 
 Provides:
 
-- **Settings tab** - a Twilio tab on Admin > Settings for the Account SID, Auth token and
-  from-number (stored as environment variables through the core settings mechanism).
+- **Settings tab** - a Twilio tab on Admin > Settings for the Account SID and Auth token
+  (stored as environment variables through the core settings mechanism), plus a phone
+  numbers section listing the numbers on the connected account. Add the ones the site
+  should use and pick which text-capable number sign-in codes are sent from.
 - **Call forwarding** - an admin page listing the Twilio numbers on your account, each with a
   forward-to number and an on/off switch. Enabled numbers point their voice webhook at this
   module, which answers with TwiML that dials your chosen number.
@@ -24,7 +26,9 @@ credentials on Admin > Settings > Twilio.
 | --- | --- |
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth token |
-| `TWILIO_PHONE_NUMBER` | Number texts are sent from, in international format |
+
+The number texts are sent from is no longer an environment variable - it is chosen from
+the account's numbers on Admin > Settings > Twilio, and only text-capable numbers qualify.
 
 ## License
 

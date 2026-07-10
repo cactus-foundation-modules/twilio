@@ -11,7 +11,7 @@ import { errorResponse } from '@/lib/utils'
 import { encryptSecret, decryptSecret } from '@/lib/crypto/secrets'
 import { checkAndRecord, getClientIp } from '@/lib/auth/rate-limit'
 import { maskPhone } from '@/lib/auth/sms'
-import { isTwilioConfigured, sendSms } from '@/modules/twilio/lib/twilio'
+import { isSmsReady, sendSiteSms } from '@/modules/twilio/lib/numbers'
 import { createPhoneVerification, verifyPhoneCode, normalisePhone } from '@/modules/twilio/lib/verification'
 
 export async function GET() {
@@ -24,7 +24,7 @@ export async function GET() {
   })
   const phone = record?.smsOtpPhoneEncrypted ? decryptSecret(record.smsOtpPhoneEncrypted) : null
   return NextResponse.json({
-    available: isTwilioConfigured(),
+    available: await isSmsReady(),
     enabled: !!phone,
     maskedPhone: phone ? maskPhone(phone) : null,
   })
@@ -39,8 +39,8 @@ export async function POST(request: NextRequest) {
   const user = await getSessionFromCookie()
   if (!user) return errorResponse('Not authenticated', 401)
 
-  if (!isTwilioConfigured()) {
-    return errorResponse('Twilio is not configured', 503)
+  if (!(await isSmsReady())) {
+    return errorResponse('Text messaging is not set up - add a text-enabled Twilio number first', 503)
   }
 
   const parsed = Body.safeParse(await request.json())
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     }
     const code = await createPhoneVerification('user', user.id, phone)
     try {
-      await sendSms(phone, `${code} is your verification code.`)
+      await sendSiteSms(phone, `${code} is your verification code.`)
     } catch (err) {
       return errorResponse(err instanceof Error ? err.message : 'Failed to send text message', 502)
     }

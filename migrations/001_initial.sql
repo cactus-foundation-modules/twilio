@@ -26,6 +26,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS "tw_forwarding_rules_phone_sid_key" ON "tw_for
 CREATE INDEX IF NOT EXISTS "tw_forwarding_rules_phone_number_idx" ON "tw_forwarding_rules" ("phone_number");
 
 -- ---------------------------------------------------------------------------
+-- Numbers from the connected Twilio account that the admin has added to the
+-- site. Texts are only ever sent from the (single) default SMS number, which
+-- must be SMS-capable. Capability flags are refreshed from Twilio whenever
+-- the numbers are listed.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "tw_site_numbers" (
+    "id"             TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
+    "phone_sid"      TEXT         NOT NULL,
+    "phone_number"   TEXT         NOT NULL,
+    "friendly_name"  TEXT         NOT NULL DEFAULT '',
+    "sms_capable"    BOOLEAN      NOT NULL DEFAULT false,
+    "is_default_sms" BOOLEAN      NOT NULL DEFAULT false,
+    "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tw_site_numbers_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "tw_site_numbers_phone_sid_key" ON "tw_site_numbers" ("phone_sid");
+-- At most one default SMS number.
+CREATE UNIQUE INDEX IF NOT EXISTS "tw_site_numbers_default_sms_key" ON "tw_site_numbers" ("is_default_sms") WHERE "is_default_sms";
+
+-- ---------------------------------------------------------------------------
 -- Phone verification codes for SMS 2FA enrolment (admins and members).
 -- Hashed code, short TTL, capped attempts - mirrors core email challenges.
 -- ---------------------------------------------------------------------------

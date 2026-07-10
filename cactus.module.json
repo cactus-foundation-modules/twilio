@@ -1,13 +1,12 @@
 {
   "name": "twilio",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding for your Twilio numbers and SMS login codes for admins and members.",
   "requiresCoreVersion": "0.5.303",
   "requiredEnvVars": [
     { "name": "TWILIO_ACCOUNT_SID", "required": false },
-    { "name": "TWILIO_AUTH_TOKEN", "required": false },
-    { "name": "TWILIO_PHONE_NUMBER", "required": false }
+    { "name": "TWILIO_AUTH_TOKEN", "required": false }
   ],
   "permissions": [
     "twilio.manage"
@@ -27,6 +26,7 @@
   ],
   "teardown": [
     "tw_forwarding_rules",
+    "tw_site_numbers",
     "tw_verification_codes"
   ],
   "cookieCategories": [],
