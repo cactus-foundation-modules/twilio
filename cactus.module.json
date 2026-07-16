@@ -1,8 +1,8 @@
 {
   "name": "twilio",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "tablePrefix": "tw_",
-  "description": "Twilio integration: call forwarding, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
+  "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
   "requiresCoreVersion": "0.5.303",
   "requiredEnvVars": [
     { "name": "TWILIO_ACCOUNT_SID", "required": false },

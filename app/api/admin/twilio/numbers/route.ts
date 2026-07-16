@@ -33,6 +33,11 @@ export async function GET() {
           greetingVoice: rule?.greetingVoice ?? '',
           recordCalls: rule?.recordCalls ?? false,
           showCalledNumber: rule?.showCalledNumber ?? false,
+          voicemailEnabled: rule?.voicemailEnabled ?? false,
+          ringTimeout: rule?.ringTimeout ?? 20,
+          voicemailGreeting: rule?.voicemailGreeting ?? '',
+          voicemailVoice: rule?.voicemailVoice ?? '',
+          businessHours: rule?.businessHours ?? [],
         }
       }),
     })

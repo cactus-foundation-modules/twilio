@@ -21,6 +21,17 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     -- When true, the forwarded leg shows the site's Twilio number as caller
     -- ID instead of the original caller's number.
     "show_called_number" BOOLEAN NOT NULL DEFAULT false,
+    -- Voicemail: taken when the forwarded leg goes unanswered, when the number
+    -- is called outside its opening hours, or when forwarding is off entirely.
+    -- ring_timeout is how many seconds the forward-to number rings first, and
+    -- business_hours is a JSON array of {day, closed, open, close} entries
+    -- (day 0 = Sunday, "HH:MM" in the site timezone). Empty array = no
+    -- schedule, so the number behaves the same at every hour. See migration 004.
+    "voicemail_enabled"  BOOLEAN NOT NULL DEFAULT false,
+    "ring_timeout"       INTEGER NOT NULL DEFAULT 20,
+    "voicemail_greeting" TEXT    NOT NULL DEFAULT '',
+    "voicemail_voice"    TEXT    NOT NULL DEFAULT '',
+    "business_hours"     JSONB   NOT NULL DEFAULT '[]'::jsonb,
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")

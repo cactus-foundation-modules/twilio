@@ -10,6 +10,7 @@ import { isTwilioConfigured, setNumberVoiceUrl } from '@/modules/twilio/lib/twil
 import { upsertForwardingRule } from '@/modules/twilio/lib/forwarding'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 import { isValidVoice } from '@/modules/twilio/lib/voices'
+import { parseBusinessHours, MIN_RING_TIMEOUT, MAX_RING_TIMEOUT } from '@/modules/twilio/lib/business-hours'
 
 const Body = z.object({
   phoneSid: z.string().min(1),
@@ -20,6 +21,11 @@ const Body = z.object({
   greetingVoice: z.string().default(''),
   recordCalls: z.boolean().default(false),
   showCalledNumber: z.boolean().default(false),
+  voicemailEnabled: z.boolean().default(false),
+  ringTimeout: z.number().int().min(MIN_RING_TIMEOUT).max(MAX_RING_TIMEOUT).default(20),
+  voicemailGreeting: z.string().max(500).default(''),
+  voicemailVoice: z.string().default(''),
+  businessHours: z.array(z.unknown()).default([]),
 })
 
 export async function PUT(request: NextRequest) {
@@ -33,12 +39,23 @@ export async function PUT(request: NextRequest) {
 
   const parsed = Body.safeParse(await request.json())
   if (!parsed.success) return errorResponse('Invalid input')
-  const { phoneSid, phoneNumber, enabled, recordCalls, showCalledNumber } = parsed.data
+  const { phoneSid, phoneNumber, enabled, recordCalls, showCalledNumber, voicemailEnabled, ringTimeout } = parsed.data
 
   const greetingMessage = parsed.data.greetingMessage.trim()
   const greetingVoice = parsed.data.greetingVoice
   if (!isValidVoice(greetingVoice)) {
     return errorResponse('Unknown greeting voice')
+  }
+
+  const voicemailGreeting = parsed.data.voicemailGreeting.trim()
+  const voicemailVoice = parsed.data.voicemailVoice
+  if (!isValidVoice(voicemailVoice)) {
+    return errorResponse('Unknown voicemail voice')
+  }
+
+  const businessHours = parseBusinessHours(parsed.data.businessHours)
+  if (!businessHours) {
+    return errorResponse('Opening hours must be a time like 09:00 for each day')
   }
 
   let forwardTo = ''
@@ -54,11 +71,27 @@ export async function PUT(request: NextRequest) {
   }
 
   try {
-    // Point the number at this module's voice webhook when enabled; clear the
-    // webhook when disabled so the number reverts to Twilio's default handling.
+    // Point the number at this module's voice webhook when there is anything for
+    // it to do; clear the webhook only when both forwarding and voicemail are
+    // off, so the number reverts to Twilio's default handling. Voicemail on its
+    // own is a perfectly good reason to keep answering calls.
     const webhookUrl = `${getSiteUrl()}/api/m/twilio/webhooks/voice`
-    await setNumberVoiceUrl(phoneSid, enabled ? webhookUrl : '')
-    await upsertForwardingRule({ phoneSid, phoneNumber, forwardTo, enabled, greetingMessage, greetingVoice, recordCalls, showCalledNumber })
+    await setNumberVoiceUrl(phoneSid, enabled || voicemailEnabled ? webhookUrl : '')
+    await upsertForwardingRule({
+      phoneSid,
+      phoneNumber,
+      forwardTo,
+      enabled,
+      greetingMessage,
+      greetingVoice,
+      recordCalls,
+      showCalledNumber,
+      voicemailEnabled,
+      ringTimeout,
+      voicemailGreeting,
+      voicemailVoice,
+      businessHours,
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to update forwarding', 502)
