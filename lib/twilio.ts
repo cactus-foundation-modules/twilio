@@ -3,7 +3,28 @@
 // module needs are plain REST.
 import { createHmac, timingSafeEqual } from 'crypto'
 
-const API_BASE = 'https://api.twilio.com/2010-04-01'
+// Twilio "Regions": routes API + media calls to a region-local edge for data
+// residency. Unset/unknown falls back to the global default (US).
+// https://www.twilio.com/docs/global-infrastructure/regions-and-edge-locations
+export const TWILIO_REGIONS = ['us1', 'ie1', 'au1'] as const
+export type TwilioRegion = (typeof TWILIO_REGIONS)[number]
+
+export const TWILIO_REGION_LABELS: Record<TwilioRegion, string> = {
+  us1: 'United States',
+  ie1: 'Ireland',
+  au1: 'Australia',
+}
+
+export function getTwilioRegion(): TwilioRegion {
+  const raw = process.env.TWILIO_REGION
+  return (TWILIO_REGIONS as readonly string[]).includes(raw ?? '') ? (raw as TwilioRegion) : 'us1'
+}
+
+function apiBase(region: TwilioRegion): string {
+  return region === 'us1'
+    ? 'https://api.twilio.com/2010-04-01'
+    : `https://api.${region}.twilio.com/2010-04-01`
+}
 
 export function getTwilioConfig(): { accountSid: string; authToken: string } | null {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
@@ -33,7 +54,7 @@ async function twilioFetch(path: string, init?: { method?: string; form?: Record
     body = new URLSearchParams(init.form).toString()
   }
 
-  const res = await fetch(`${API_BASE}/Accounts/${config.accountSid}${path}`, {
+  const res = await fetch(`${apiBase(getTwilioRegion())}/Accounts/${config.accountSid}${path}`, {
     method: init?.method ?? 'GET',
     headers,
     body,
@@ -199,7 +220,7 @@ export async function fetchRecordingAudio(recordingSid: string): Promise<Respons
   const config = getTwilioConfig()
   if (!config) throw new Error('Twilio is not configured')
   return fetch(
-    `${API_BASE}/Accounts/${config.accountSid}/Recordings/${encodeURIComponent(recordingSid)}.mp3`,
+    `${apiBase(getTwilioRegion())}/Accounts/${config.accountSid}/Recordings/${encodeURIComponent(recordingSid)}.mp3`,
     {
       headers: { Authorization: authHeader(config.accountSid, config.authToken) },
       signal: AbortSignal.timeout(30_000),

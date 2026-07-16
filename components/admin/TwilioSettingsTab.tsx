@@ -13,10 +13,16 @@ const ENV_KEYS = [
   { key: 'TWILIO_AUTH_TOKEN', label: 'Auth token', placeholder: '••••••••', secret: true },
 ] as const
 
+const REGIONS = [
+  { value: 'us1', label: 'United States' },
+  { value: 'ie1', label: 'Ireland' },
+  { value: 'au1', label: 'Australia' },
+] as const
+
 type Status =
-  | { configured: false }
-  | { configured: true; connected: true; accountName: string; fromNumber: string }
-  | { configured: true; connected: false; error?: string }
+  | { configured: false; region: string }
+  | { configured: true; connected: true; accountName: string; fromNumber: string; region: string }
+  | { configured: true; connected: false; error?: string; region: string }
 
 type AccountNumber = {
   sid: string
@@ -38,6 +44,10 @@ export function TwilioSettingsTab() {
   const [numbers, setNumbers] = useState<AccountNumber[] | null>(null)
   const [numbersError, setNumbersError] = useState('')
   const [busySid, setBusySid] = useState('')
+  const [region, setRegion] = useState('us1')
+  const [regionSaving, setRegionSaving] = useState(false)
+  const [regionSaved, setRegionSaved] = useState(false)
+  const [regionError, setRegionError] = useState('')
 
   async function load() {
     try {
@@ -50,7 +60,11 @@ export function TwilioSettingsTab() {
         setSetVars(d.vars ?? {})
         setLocalMode(!!d.localMode)
       }
-      if (statusRes.ok) setStatus(await statusRes.json())
+      if (statusRes.ok) {
+        const s = await statusRes.json()
+        setStatus(s)
+        setRegion(s.region)
+      }
     } catch {
       // Status stays null; the tab still renders the input fields.
     }
@@ -64,12 +78,37 @@ export function TwilioSettingsTab() {
           setSetVars(d.vars ?? {})
           setLocalMode(!!d.localMode)
         }
-        if (statusRes.ok) setStatus(await statusRes.json())
+        if (statusRes.ok) {
+          const s = await statusRes.json()
+          setStatus(s)
+          setRegion(s.region)
+        }
       })
       .catch(() => {})
   }, [])
 
   const connected = status?.configured === true && status.connected
+
+  async function handleSaveRegion() {
+    setRegionSaving(true)
+    setRegionSaved(false)
+    setRegionError('')
+    try {
+      const res = await fetch('/api/admin/env', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vars: [{ key: 'TWILIO_REGION', value: region }] }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Failed to save')
+      setRegionSaved(true)
+      await load()
+    } catch (err: unknown) {
+      setRegionError(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setRegionSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!connected) return
@@ -199,6 +238,36 @@ export function TwilioSettingsTab() {
             </button>
           </>
         )}
+
+        <div className="field" style={{ marginTop: 'var(--space-4)' }}>
+          <label>Routing country</label>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-2)' }}>
+            Where Twilio processes and stores calls, texts and recordings for this site.
+          </p>
+          {regionError && <div className="alert alert-danger">{regionError}</div>}
+          {regionSaved && <div className="alert alert-success">Saved. Changes take effect after the next deployment.</div>}
+          {localMode ? (
+            <div className="alert alert-warning">
+              Local development mode: set <code>TWILIO_REGION</code> (us1, ie1 or au1) in{' '}
+              <code>.env.local</code> and restart the dev server.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
+              <select value={region} onChange={(e) => setRegion(e.target.value)}>
+                {REGIONS.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-primary"
+                disabled={regionSaving || (status?.region ?? 'us1') === region}
+                onClick={handleSaveRegion}
+              >
+                {regionSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {connected && (
