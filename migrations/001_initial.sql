@@ -64,6 +64,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS "tw_site_numbers_phone_sid_key" ON "tw_site_nu
 CREATE UNIQUE INDEX IF NOT EXISTS "tw_site_numbers_default_sms_key" ON "tw_site_numbers" ("is_default_sms") WHERE "is_default_sms";
 
 -- ---------------------------------------------------------------------------
+-- Voicemail messages left on the site's numbers. One row per recording made by
+-- the voicemail TwiML; the audio itself stays in the Twilio account. Twilio's
+-- Recordings listing cannot say which recordings are voicemails and which are
+-- recorded forwarded calls, so the call log matches against this table. See
+-- migration 005.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "tw_voicemails" (
+    "recording_sid"    TEXT         NOT NULL,
+    "call_sid"         TEXT         NOT NULL,
+    "from_number"      TEXT         NOT NULL DEFAULT '',
+    "to_number"        TEXT         NOT NULL DEFAULT '',
+    "duration_seconds" INTEGER      NOT NULL DEFAULT 0,
+    "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tw_voicemails_pkey" PRIMARY KEY ("recording_sid")
+);
+CREATE INDEX IF NOT EXISTS "tw_voicemails_call_sid_idx" ON "tw_voicemails" ("call_sid");
+
+-- ---------------------------------------------------------------------------
 -- Phone verification codes for SMS 2FA enrolment (admins and members).
 -- Hashed code, short TTL, capped attempts - mirrors core email challenges.
 -- ---------------------------------------------------------------------------

@@ -22,6 +22,8 @@ type CallLogEntry = {
   startTime: string
   durationSeconds: number
   recordingSids: string[]
+  /** The recordingSids that are voicemail messages rather than recorded calls. */
+  voicemailSids: string[]
 }
 
 type MessageLogEntry = {
@@ -82,6 +84,26 @@ function DirectionBadge({ direction }: { direction: 'inbound' | 'outbound' }) {
       }}
     >
       {direction === 'inbound' ? 'Incoming' : 'Outgoing'}
+    </span>
+  )
+}
+
+// Marks a recording as a message somebody left rather than a recording of a
+// call that was answered. Only shown on recordings known to be voicemail: an
+// unmarked recording is the ordinary kind, not an unknown one.
+function VoicemailBadge() {
+  return (
+    <span
+      style={{
+        fontSize: 'var(--text-xs)',
+        color: 'var(--color-primary)',
+        border: '1px solid var(--color-primary)',
+        borderRadius: 'var(--radius-sm)',
+        padding: '0 var(--space-2)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      Voicemail
     </span>
   )
 }
@@ -217,26 +239,27 @@ function CallLogCard({ calls, loading, error, phoneNumber }: { calls: CallLogEnt
                       <span style={{ color: 'var(--color-text-muted)' }}>—</span>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                        {c.recordingSids.map((sid) =>
-                          playingSid === sid ? (
-                            <audio
-                              key={sid}
-                              controls
-                              autoPlay
-                              preload="none"
-                              src={`/api/m/twilio/admin/recordings/${sid}?number=${encodeURIComponent(phoneNumber)}`}
-                              style={{ height: '2rem', maxWidth: '16rem' }}
-                            />
-                          ) : (
-                            <button
-                              key={sid}
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => setPlayingSid(sid)}
-                            >
-                              Listen
-                            </button>
-                          )
-                        )}
+                        {c.recordingSids.map((sid) => (
+                          <div
+                            key={sid}
+                            style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}
+                          >
+                            {playingSid === sid ? (
+                              <audio
+                                controls
+                                autoPlay
+                                preload="none"
+                                src={`/api/m/twilio/admin/recordings/${sid}?number=${encodeURIComponent(phoneNumber)}`}
+                                style={{ height: '2rem', maxWidth: '16rem' }}
+                              />
+                            ) : (
+                              <button className="btn btn-secondary btn-sm" onClick={() => setPlayingSid(sid)}>
+                                Listen
+                              </button>
+                            )}
+                            {c.voicemailSids.includes(sid) && <VoicemailBadge />}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </td>
