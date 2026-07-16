@@ -1,11 +1,22 @@
 // Thin Twilio REST client. Credentials come from env vars managed on the core
-// admin settings page (Twilio tab). No SDK dependency - the three calls this
-// module needs are plain REST.
+// admin settings page (Twilio tab). No SDK dependency - the calls this module
+// needs are plain REST.
+//
+// Regions: Twilio runs isolated regional instances (us1/ie1/au1) for data
+// residency. Two facts drive the shape of everything below.
+//
+//   1. Each number's inbound processing Region is set PER NUMBER, via the
+//      Routes API. Numbers themselves are a single global pool bought through
+//      us1, so us1 is always the control plane: listing numbers and reading or
+//      writing their routing happens there and nowhere else.
+//   2. A call or text is processed - and its records stored - in the Region
+//      that number is routed to. Query the wrong Region's API and the records
+//      simply are not there. So every log/recording/outbound call must target
+//      the Region of the number it concerns.
+//
+// https://www.twilio.com/docs/global-infrastructure/understanding-twilio-regions
 import { createHmac, timingSafeEqual } from 'crypto'
 
-// Twilio "Regions": routes API + media calls to a region-local edge for data
-// residency. Unset/unknown falls back to the global default (US).
-// https://www.twilio.com/docs/global-infrastructure/regions-and-edge-locations
 export const TWILIO_REGIONS = ['us1', 'ie1', 'au1'] as const
 export type TwilioRegion = (typeof TWILIO_REGIONS)[number]
 
@@ -15,15 +26,57 @@ export const TWILIO_REGION_LABELS: Record<TwilioRegion, string> = {
   au1: 'Australia',
 }
 
-export function getTwilioRegion(): TwilioRegion {
-  const raw = process.env.TWILIO_REGION
-  return (TWILIO_REGIONS as readonly string[]).includes(raw ?? '') ? (raw as TwilioRegion) : 'us1'
+// Numbers are bought through us1 and routing is administered from us1, so the
+// account listing and the Routes API always go here regardless of where any
+// individual number is routed.
+export const HOME_REGION: TwilioRegion = 'us1'
+
+export function isTwilioRegion(value: string): value is TwilioRegion {
+  return (TWILIO_REGIONS as readonly string[]).includes(value)
 }
 
-function apiBase(region: TwilioRegion): string {
+// Twilio FQDNs are {product}.{edge}.{region}.twilio.com. The bare
+// {product}.{region}.twilio.com form was switched off on 28 April 2026, so the
+// edge is not optional for a non-US Region - omitting it silently routes the
+// request back to us1, which is exactly the bug this module exists to avoid.
+// https://www.twilio.com/docs/global-infrastructure/using-the-twilio-rest-api-in-a-non-us-region
+const REGION_EDGE: Record<Exclude<TwilioRegion, 'us1'>, string> = {
+  ie1: 'dublin',
+  au1: 'sydney',
+}
+
+function regionHost(product: 'api' | 'routes', region: TwilioRegion): string {
   return region === 'us1'
-    ? 'https://api.twilio.com/2010-04-01'
-    : `https://api.${region}.twilio.com/2010-04-01`
+    ? `${product}.twilio.com`
+    : `${product}.${REGION_EDGE[region]}.${region}.twilio.com`
+}
+
+// "Any given Auth token or API key is only valid for the Twilio Region in which
+// it was created" - so a Region the site talks to needs its own token, found in
+// the Twilio console under API keys & tokens with that Region selected. The
+// Account SID is the same across Regions.
+// https://www.twilio.com/docs/global-infrastructure/manage-regional-api-credentials
+const REGION_TOKEN_ENV: Record<TwilioRegion, string> = {
+  us1: 'TWILIO_AUTH_TOKEN',
+  ie1: 'TWILIO_AUTH_TOKEN_IE1',
+  au1: 'TWILIO_AUTH_TOKEN_AU1',
+}
+
+export function regionTokenEnvVar(region: TwilioRegion): string {
+  return REGION_TOKEN_ENV[region]
+}
+
+// Thrown when a number is routed to a Region the site has no token for. Its
+// message is shown to admins verbatim, so it names the fix.
+export class MissingRegionTokenError extends Error {
+  constructor(public readonly region: TwilioRegion) {
+    super(
+      `No Twilio auth token for the ${TWILIO_REGION_LABELS[region]} region. ` +
+      `Add ${REGION_TOKEN_ENV[region]} on the Twilio settings tab - it is a different ` +
+      `token from your main one, found in the Twilio console with ${region.toUpperCase()} selected.`
+    )
+    this.name = 'MissingRegionTokenError'
+  }
 }
 
 export function getTwilioConfig(): { accountSid: string; authToken: string } | null {
@@ -37,29 +90,46 @@ export function isTwilioConfigured(): boolean {
   return getTwilioConfig() !== null
 }
 
+export function isRegionConfigured(region: TwilioRegion): boolean {
+  return !!process.env.TWILIO_ACCOUNT_SID && !!process.env[REGION_TOKEN_ENV[region]]
+}
+
+// Regions this site currently holds a token for. us1 is always first when set.
+export function getConfiguredRegions(): TwilioRegion[] {
+  return TWILIO_REGIONS.filter(isRegionConfigured)
+}
+
+function regionCredentials(region: TwilioRegion): { accountSid: string; authToken: string } {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID
+  if (!accountSid) throw new Error('Twilio is not configured')
+  const authToken = process.env[REGION_TOKEN_ENV[region]]
+  if (!authToken) throw new MissingRegionTokenError(region)
+  return { accountSid, authToken }
+}
+
 function authHeader(accountSid: string, authToken: string): string {
   return `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`
 }
 
-async function twilioFetch(path: string, init?: { method?: string; form?: Record<string, string> }): Promise<unknown> {
-  const config = getTwilioConfig()
-  if (!config) throw new Error('Twilio is not configured')
+// The classic 2010-04-01 account API, in one Region.
+async function twilioFetch(
+  path: string,
+  init?: { method?: string; form?: Record<string, string>; region?: TwilioRegion }
+): Promise<unknown> {
+  const region = init?.region ?? HOME_REGION
+  const { accountSid, authToken } = regionCredentials(region)
 
-  const headers: Record<string, string> = {
-    Authorization: authHeader(config.accountSid, config.authToken),
-  }
+  const headers: Record<string, string> = { Authorization: authHeader(accountSid, authToken) }
   let body: string | undefined
   if (init?.form) {
     headers['Content-Type'] = 'application/x-www-form-urlencoded'
     body = new URLSearchParams(init.form).toString()
   }
 
-  const res = await fetch(`${apiBase(getTwilioRegion())}/Accounts/${config.accountSid}${path}`, {
-    method: init?.method ?? 'GET',
-    headers,
-    body,
-    signal: AbortSignal.timeout(15_000),
-  })
+  const res = await fetch(
+    `https://${regionHost('api', region)}/2010-04-01/Accounts/${accountSid}${path}`,
+    { method: init?.method ?? 'GET', headers, body, signal: AbortSignal.timeout(15_000) }
+  )
 
   if (!res.ok) {
     const detail = await res.json().catch(() => null) as { message?: string } | null
@@ -68,18 +138,88 @@ async function twilioFetch(path: string, init?: { method?: string; form?: Record
   return res.json()
 }
 
-// Connection test - fetches the account's friendly name.
-export async function fetchAccountName(): Promise<string> {
-  const data = await twilioFetch('.json') as { friendly_name?: string }
+// Connection test - fetches the account's friendly name from one Region. Also
+// doubles as the per-Region credential check, since a token only authenticates
+// against the Region it was made in.
+export async function fetchAccountName(region: TwilioRegion = HOME_REGION): Promise<string> {
+  const data = await twilioFetch('.json', { region }) as { friendly_name?: string }
   return data.friendly_name ?? 'Twilio account'
 }
 
+// ---------------------------------------------------------------------------
+// Inbound Processing Region (Routes API) - the per-number Region control.
+//
+// v3 lives in us1 only and covers both voice and messaging, so it is reached
+// with the main (us1) credentials no matter which Region a number is routed to.
+// https://www.twilio.com/docs/global-infrastructure/inbound-processing-api
+// ---------------------------------------------------------------------------
+
+type RoutesResponse = {
+  phone_number?: string
+  voice_region?: string
+  messaging_region?: string
+}
+
+async function routesFetch(
+  phoneNumber: string,
+  init?: { method?: string; form?: Record<string, string> }
+): Promise<RoutesResponse> {
+  const { accountSid, authToken } = regionCredentials(HOME_REGION)
+
+  const headers: Record<string, string> = { Authorization: authHeader(accountSid, authToken) }
+  let body: string | undefined
+  if (init?.form) {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    body = new URLSearchParams(init.form).toString()
+  }
+
+  const res = await fetch(
+    `https://${regionHost('routes', HOME_REGION)}/v3/PhoneNumbers/${encodeURIComponent(phoneNumber)}`,
+    { method: init?.method ?? 'GET', headers, body, signal: AbortSignal.timeout(15_000) }
+  )
+
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null) as { message?: string } | null
+    throw new Error(detail?.message ?? `Twilio Routes API error ${res.status}`)
+  }
+  return res.json() as Promise<RoutesResponse>
+}
+
+// A number's inbound processing Region. Twilio reports voice and messaging
+// separately; this module keeps them together (one Region per number), so the
+// voice Region is the answer and an unset/unknown value means the us1 default.
+export async function getNumberRegion(phoneNumber: string): Promise<TwilioRegion> {
+  const data = await routesFetch(phoneNumber)
+  const region = data.voice_region ?? ''
+  return isTwilioRegion(region) ? region : HOME_REGION
+}
+
+// Routes both voice and messaging for a number to one Region. Twilio takes up
+// to five minutes to apply a routing change.
+export async function setNumberRegion(phoneNumber: string, region: TwilioRegion): Promise<void> {
+  await routesFetch(phoneNumber, {
+    method: 'POST',
+    form: { voiceRegion: region, messagingRegion: region },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Account resources
+// ---------------------------------------------------------------------------
+
 // `from` must be an SMS-capable Twilio number on the account - callers go
-// through lib/numbers.ts sendSiteSms, which resolves the site's default.
-export async function sendSms(to: string, body: string, from: string): Promise<void> {
+// through lib/numbers.ts sendSiteSms, which resolves the site's default and its
+// Region. The Region decides where the message is processed and stored.
+export async function sendSms(
+  to: string,
+  body: string,
+  from: string,
+  region: TwilioRegion = HOME_REGION
+): Promise<void> {
   await twilioFetch('/Messages.json', {
     method: 'POST',
     form: { To: to, From: from, Body: body },
+    region,
   })
 }
 
@@ -92,6 +232,8 @@ export type IncomingNumber = {
   voiceCapable: boolean
 }
 
+// The account's numbers are a single global pool bought through us1, so this
+// listing is not Region-dependent.
 export async function listIncomingNumbers(): Promise<IncomingNumber[]> {
   const data = await twilioFetch('/IncomingPhoneNumbers.json?PageSize=100') as {
     incoming_phone_numbers?: Array<{
@@ -123,10 +265,17 @@ export type CallLogEntry = {
   recordingSids: string[]
 }
 
-// Calls to and from a number, newest first. Two filtered listings merged -
-// the Calls resource only filters on one of To/From per request. Recordings
-// are attached from a single account-wide listing keyed by call SID.
-export async function listCallsForNumber(phoneNumber: string, limit = 50): Promise<CallLogEntry[]> {
+// Calls to and from a number, newest first. Two filtered listings merged - the
+// Calls resource only filters on one of To/From per request. Recordings are
+// attached from a single Region-wide listing keyed by call SID.
+//
+// `region` must be the number's own routing Region: its calls were processed
+// there and exist nowhere else.
+export async function listCallsForNumber(
+  phoneNumber: string,
+  region: TwilioRegion = HOME_REGION,
+  limit = 50
+): Promise<CallLogEntry[]> {
   type RawCall = {
     sid: string
     from: string
@@ -138,9 +287,9 @@ export async function listCallsForNumber(phoneNumber: string, limit = 50): Promi
     duration: string | null
   }
   const [toData, fromData, recData] = await Promise.all([
-    twilioFetch(`/Calls.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`),
-    twilioFetch(`/Calls.json?PageSize=${limit}&From=${encodeURIComponent(phoneNumber)}`),
-    twilioFetch('/Recordings.json?PageSize=200'),
+    twilioFetch(`/Calls.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`, { region }),
+    twilioFetch(`/Calls.json?PageSize=${limit}&From=${encodeURIComponent(phoneNumber)}`, { region }),
+    twilioFetch('/Recordings.json?PageSize=200', { region }),
   ]) as [{ calls?: RawCall[] }, { calls?: RawCall[] }, { recordings?: Array<{ sid: string; call_sid: string; status: string }> }]
 
   const recordingsByCall = new Map<string, string[]>()
@@ -180,8 +329,12 @@ export type MessageLogEntry = {
 }
 
 // Texts to and from a number, newest first. Same merge-two-listings shape as
-// listCallsForNumber.
-export async function listMessagesForNumber(phoneNumber: string, limit = 50): Promise<MessageLogEntry[]> {
+// listCallsForNumber, and the same Region rule.
+export async function listMessagesForNumber(
+  phoneNumber: string,
+  region: TwilioRegion = HOME_REGION,
+  limit = 50
+): Promise<MessageLogEntry[]> {
   type RawMessage = {
     sid: string
     from: string
@@ -193,8 +346,8 @@ export async function listMessagesForNumber(phoneNumber: string, limit = 50): Pr
     body: string
   }
   const [toData, fromData] = await Promise.all([
-    twilioFetch(`/Messages.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`),
-    twilioFetch(`/Messages.json?PageSize=${limit}&From=${encodeURIComponent(phoneNumber)}`),
+    twilioFetch(`/Messages.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`, { region }),
+    twilioFetch(`/Messages.json?PageSize=${limit}&From=${encodeURIComponent(phoneNumber)}`, { region }),
   ]) as [{ messages?: RawMessage[] }, { messages?: RawMessage[] }]
 
   const bySid = new Map<string, RawMessage>()
@@ -214,15 +367,18 @@ export async function listMessagesForNumber(phoneNumber: string, limit = 50): Pr
     .slice(0, limit)
 }
 
-// Streams a recording's MP3 with the account's basic-auth credentials so the
-// browser never sees them. Twilio recording media URLs are auth-protected.
-export async function fetchRecordingAudio(recordingSid: string): Promise<Response> {
-  const config = getTwilioConfig()
-  if (!config) throw new Error('Twilio is not configured')
+// Streams a recording's MP3 with the Region's basic-auth credentials so the
+// browser never sees them. A recording lives in the Region its call was
+// processed in, so `region` must be that number's Region.
+export async function fetchRecordingAudio(
+  recordingSid: string,
+  region: TwilioRegion = HOME_REGION
+): Promise<Response> {
+  const { accountSid, authToken } = regionCredentials(region)
   return fetch(
-    `${apiBase(getTwilioRegion())}/Accounts/${config.accountSid}/Recordings/${encodeURIComponent(recordingSid)}.mp3`,
+    `https://${regionHost('api', region)}/2010-04-01/Accounts/${accountSid}/Recordings/${encodeURIComponent(recordingSid)}.mp3`,
     {
-      headers: { Authorization: authHeader(config.accountSid, config.authToken) },
+      headers: { Authorization: authHeader(accountSid, authToken) },
       signal: AbortSignal.timeout(30_000),
     }
   )
@@ -238,16 +394,25 @@ export function escapeXml(text: string): string {
     .replace(/'/g, '&apos;')
 }
 
-// Places an outbound call that plays the given TwiML - used to preview the
-// forwarding greeting. `from` must be a Twilio number on the account.
-export async function placeCall(to: string, from: string, twiml: string): Promise<void> {
+// Places an outbound call that plays the given TwiML - used for click-to-dial
+// and to preview the forwarding greeting. `from` must be a Twilio number on the
+// account, and `region` its Region, so the call is processed and logged there.
+export async function placeCall(
+  to: string,
+  from: string,
+  twiml: string,
+  region: TwilioRegion = HOME_REGION
+): Promise<void> {
   await twilioFetch('/Calls.json', {
     method: 'POST',
     form: { To: to, From: from, Twiml: twiml },
+    region,
   })
 }
 
 // Points the number's voice webhook at `url`, or clears it when url is empty.
+// IncomingPhoneNumbers is account-level, so this is a us1 operation whatever
+// the number's routing.
 export async function setNumberVoiceUrl(sid: string, url: string): Promise<void> {
   await twilioFetch(`/IncomingPhoneNumbers/${encodeURIComponent(sid)}.json`, {
     method: 'POST',
@@ -258,21 +423,36 @@ export async function setNumberVoiceUrl(sid: string, url: string): Promise<void>
 // Validates Twilio's X-Twilio-Signature header: HMAC-SHA1 over the full webhook
 // URL plus the POST params concatenated in key-sorted order, base64-encoded.
 // https://www.twilio.com/docs/usage/security#validating-requests
+//
+// A webhook is signed with the auth token of the Region that processed the
+// call, so a number routed to ie1 arrives signed with the ie1 token. Every
+// configured Region's token is tried: each one is ours, so a match against any
+// of them proves the request came from our Twilio account, which is the whole
+// point of the check.
 export function validateTwilioSignature(
   url: string,
   params: Record<string, string>,
   signature: string
 ): boolean {
-  const config = getTwilioConfig()
-  if (!config) return false
+  const regions = getConfiguredRegions()
+  if (regions.length === 0) return false
 
   let data = url
   for (const key of Object.keys(params).sort()) {
     data += key + params[key]
   }
-  const expected = createHmac('sha1', config.authToken).update(data, 'utf8').digest('base64')
 
-  const a = Buffer.from(expected)
-  const b = Buffer.from(signature)
-  return a.length === b.length && timingSafeEqual(a, b)
+  const provided = Buffer.from(signature)
+  let matched = false
+  for (const region of regions) {
+    const token = process.env[REGION_TOKEN_ENV[region]]
+    if (!token) continue
+    const expected = Buffer.from(createHmac('sha1', token).update(data, 'utf8').digest('base64'))
+    // No early exit: every candidate is compared so the work does not vary
+    // with which Region happened to sign the request.
+    if (expected.length === provided.length && timingSafeEqual(expected, provided)) {
+      matched = true
+    }
+  }
+  return matched
 }

@@ -5,6 +5,11 @@
 // /api/admin/env route (declared via this module's requiredEnvVars). Phone
 // numbers are picked from the connected account rather than typed in - texts
 // only ever go out from a text-capable number the admin has added to the site.
+//
+// Regions: each number is routed to a country of its own, and each country
+// needs its own auth token because a Twilio token only works in the region it
+// was made in. So the credentials card carries one token field per country,
+// and the routing choice sits per number down in Phone numbers.
 import { useEffect, useState } from 'react'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
 
@@ -13,16 +18,32 @@ const ENV_KEYS = [
   { key: 'TWILIO_AUTH_TOKEN', label: 'Auth token', placeholder: '••••••••', secret: true },
 ] as const
 
-const REGIONS = [
-  { value: 'us1', label: 'United States' },
-  { value: 'ie1', label: 'Ireland' },
-  { value: 'au1', label: 'Australia' },
+// Region-specific tokens. The United States token is the main one above, so
+// only the other two need their own field.
+const REGION_ENV_KEYS = [
+  { key: 'TWILIO_AUTH_TOKEN_IE1', region: 'ie1', label: 'Ireland auth token' },
+  { key: 'TWILIO_AUTH_TOKEN_AU1', region: 'au1', label: 'Australia auth token' },
 ] as const
 
+const REGION_LABELS: Record<string, string> = {
+  us1: 'United States',
+  ie1: 'Ireland',
+  au1: 'Australia',
+}
+
+const REGION_OPTIONS = ['us1', 'ie1', 'au1'] as const
+
+type RegionStatus = {
+  region: string
+  configured: boolean
+  connected: boolean
+  error?: string
+}
+
 type Status =
-  | { configured: false; region: string }
-  | { configured: true; connected: true; accountName: string; fromNumber: string; region: string }
-  | { configured: true; connected: false; error?: string; region: string }
+  | { configured: false; regions: RegionStatus[] }
+  | { configured: true; connected: true; accountName: string; fromNumber: string; configuredRegions: string[]; regions: RegionStatus[] }
+  | { configured: true; connected: false; error?: string; regions: RegionStatus[] }
 
 type AccountNumber = {
   sid: string
@@ -31,6 +52,8 @@ type AccountNumber = {
   smsCapable: boolean
   onSite: boolean
   isDefaultSms: boolean
+  region: string | null
+  regionTokenMissing: boolean
 }
 
 export function TwilioSettingsTab() {
@@ -44,10 +67,6 @@ export function TwilioSettingsTab() {
   const [numbers, setNumbers] = useState<AccountNumber[] | null>(null)
   const [numbersError, setNumbersError] = useState('')
   const [busySid, setBusySid] = useState('')
-  const [region, setRegion] = useState('us1')
-  const [regionSaving, setRegionSaving] = useState(false)
-  const [regionSaved, setRegionSaved] = useState(false)
-  const [regionError, setRegionError] = useState('')
 
   async function load() {
     try {
@@ -60,11 +79,7 @@ export function TwilioSettingsTab() {
         setSetVars(d.vars ?? {})
         setLocalMode(!!d.localMode)
       }
-      if (statusRes.ok) {
-        const s = await statusRes.json()
-        setStatus(s)
-        setRegion(s.region)
-      }
+      if (statusRes.ok) setStatus(await statusRes.json())
     } catch {
       // Status stays null; the tab still renders the input fields.
     }
@@ -78,37 +93,12 @@ export function TwilioSettingsTab() {
           setSetVars(d.vars ?? {})
           setLocalMode(!!d.localMode)
         }
-        if (statusRes.ok) {
-          const s = await statusRes.json()
-          setStatus(s)
-          setRegion(s.region)
-        }
+        if (statusRes.ok) setStatus(await statusRes.json())
       })
       .catch(() => {})
   }, [])
 
   const connected = status?.configured === true && status.connected
-
-  async function handleSaveRegion() {
-    setRegionSaving(true)
-    setRegionSaved(false)
-    setRegionError('')
-    try {
-      const res = await fetch('/api/admin/env', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vars: [{ key: 'TWILIO_REGION', value: region }] }),
-      })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error ?? 'Failed to save')
-      setRegionSaved(true)
-      await load()
-    } catch (err: unknown) {
-      setRegionError(err instanceof Error ? err.message : 'Failed to save')
-    } finally {
-      setRegionSaving(false)
-    }
-  }
 
   useEffect(() => {
     if (!connected) return
@@ -127,7 +117,7 @@ export function TwilioSettingsTab() {
     setSaved(false)
     setError('')
     try {
-      const vars = ENV_KEYS
+      const vars = [...ENV_KEYS, ...REGION_ENV_KEYS]
         .map(({ key }) => ({ key, value: values[key] ?? '' }))
         .filter((v) => v.value.trim() !== '')
       const res = await fetch('/api/admin/env', {
@@ -147,14 +137,18 @@ export function TwilioSettingsTab() {
     }
   }
 
-  async function updateNumber(sid: string, action: 'add' | 'remove' | 'set-default-sms') {
+  async function updateNumber(
+    sid: string,
+    action: 'add' | 'remove' | 'set-default-sms' | 'set-region',
+    region?: string
+  ) {
     setBusySid(sid)
     setNumbersError('')
     try {
       const res = await fetch('/api/m/twilio/admin/site-numbers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, sid }),
+        body: JSON.stringify({ action, sid, region }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? 'Failed to update numbers')
@@ -169,7 +163,11 @@ export function TwilioSettingsTab() {
     }
   }
 
-  const hasInput = ENV_KEYS.some(({ key }) => (values[key] ?? '').trim() !== '')
+  const hasInput = [...ENV_KEYS, ...REGION_ENV_KEYS].some(({ key }) => (values[key] ?? '').trim() !== '')
+
+  // A region whose token is set but rejected is worth shouting about: the
+  // numbers routed there will show empty logs and no obvious reason why.
+  const brokenRegions = (status?.regions ?? []).filter((r) => r.configured && !r.connected && r.region !== 'us1')
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -208,6 +206,14 @@ export function TwilioSettingsTab() {
           )
         )}
 
+        {brokenRegions.map((r) => (
+          <div className="alert alert-danger" key={r.region}>
+            Your <strong>{REGION_LABELS[r.region] ?? r.region}</strong> token was rejected
+            {r.error ? `: ${r.error}` : ''}. Numbers routed there won&apos;t show any calls or texts
+            until it&apos;s right.
+          </div>
+        ))}
+
         {localMode ? (
           <div className="alert alert-warning">
             Local development mode: set these in <code>.env.local</code> and restart the dev server.
@@ -233,41 +239,48 @@ export function TwilioSettingsTab() {
                 />
               </div>
             ))}
+
+            <h3
+              style={{
+                fontSize: 'var(--text-sm)',
+                fontWeight: 'var(--font-semibold)',
+                color: 'var(--color-text)',
+                margin: 'var(--space-5) 0 var(--space-1)',
+              }}
+            >
+              Other countries
+            </h3>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-3)' }}>
+              Only needed if you route a number to Ireland or Australia (set per number below).
+              Twilio issues a <strong>separate</strong> token for each country - your main token
+              won&apos;t work there. Find them in the Twilio console under API keys &amp; tokens,
+              with the country picked in the Region dropdown. Leave blank if you don&apos;t use them.
+            </p>
+            {REGION_ENV_KEYS.map(({ key, label }) => (
+              <div className="field" key={key}>
+                <label>
+                  {label}
+                  {setVars[key] && (
+                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                      (set)
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="password"
+                  value={values[key] ?? ''}
+                  placeholder={setVars[key] ? 'Leave blank to keep current value' : '••••••••'}
+                  onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
+                  autoComplete="off"
+                />
+              </div>
+            ))}
+
             <button className="btn btn-primary" disabled={!hasInput || saving} onClick={handleSave}>
               {saving ? 'Saving…' : 'Save'}
             </button>
           </>
         )}
-
-        <div className="field" style={{ marginTop: 'var(--space-4)' }}>
-          <label>Routing country</label>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-2)' }}>
-            Where Twilio processes and stores calls, texts and recordings for this site.
-          </p>
-          {regionError && <div className="alert alert-danger">{regionError}</div>}
-          {regionSaved && <div className="alert alert-success">Saved. Changes take effect after the next deployment.</div>}
-          {localMode ? (
-            <div className="alert alert-warning">
-              Local development mode: set <code>TWILIO_REGION</code> (us1, ie1 or au1) in{' '}
-              <code>.env.local</code> and restart the dev server.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center' }}>
-              <select value={region} onChange={(e) => setRegion(e.target.value)}>
-                {REGIONS.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
-              <button
-                className="btn btn-primary"
-                disabled={regionSaving || (status?.region ?? 'us1') === region}
-                onClick={handleSaveRegion}
-              >
-                {regionSaving ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       {connected && (
@@ -318,6 +331,29 @@ export function TwilioSettingsTab() {
                   >
                     {n.smsCapable ? 'Texts' : 'No texts'}
                   </span>
+                  {n.onSite && (
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-2)',
+                        color: 'var(--color-text)',
+                        fontSize: 'var(--text-sm)',
+                        margin: 0,
+                      }}
+                    >
+                      Country
+                      <select
+                        value={n.region ?? 'us1'}
+                        disabled={!!busySid}
+                        onChange={(e) => updateNumber(n.sid, 'set-region', e.target.value)}
+                      >
+                        {REGION_OPTIONS.map((r) => (
+                          <option key={r} value={r}>{REGION_LABELS[r]}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   {n.onSite && n.smsCapable && (
                     <label
                       style={{
@@ -348,10 +384,27 @@ export function TwilioSettingsTab() {
                   >
                     {busySid === n.sid ? 'Working…' : n.onSite ? 'Remove from site' : 'Add to site'}
                   </button>
+                  {n.regionTokenMissing && n.region && (
+                    <div
+                      className="alert alert-warning"
+                      style={{ flexBasis: '100%', margin: 0 }}
+                    >
+                      This number runs through <strong>{REGION_LABELS[n.region] ?? n.region}</strong>,
+                      but there&apos;s no {REGION_LABELS[n.region] ?? n.region} token set - so its calls
+                      and texts won&apos;t show up. Add one above.
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
+
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 'var(--space-4) 0 0' }}>
+            <strong>Country</strong> is where Twilio handles and stores that number&apos;s calls,
+            texts and recordings. Changing it takes up to five minutes to bed in at Twilio&apos;s end,
+            and only affects what happens from then on - anything already logged stays in the
+            country it happened in.
+          </p>
         </div>
       )}
 

@@ -31,8 +31,8 @@ CREATE INDEX IF NOT EXISTS "tw_forwarding_rules_phone_number_idx" ON "tw_forward
 -- ---------------------------------------------------------------------------
 -- Numbers from the connected Twilio account that the admin has added to the
 -- site. Texts are only ever sent from the (single) default SMS number, which
--- must be SMS-capable. Capability flags are refreshed from Twilio whenever
--- the numbers are listed.
+-- must be SMS-capable. Capability flags and the routing region are refreshed
+-- from Twilio whenever the numbers are listed.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS "tw_site_numbers" (
     "id"             TEXT         NOT NULL DEFAULT gen_random_uuid()::text,
@@ -41,6 +41,9 @@ CREATE TABLE IF NOT EXISTS "tw_site_numbers" (
     "friendly_name"  TEXT         NOT NULL DEFAULT '',
     "sms_capable"    BOOLEAN      NOT NULL DEFAULT false,
     "is_default_sms" BOOLEAN      NOT NULL DEFAULT false,
+    -- Twilio Region processing this number's calls and texts (us1/ie1/au1),
+    -- mirrored from the Routes API. See migration 003.
+    "region"         TEXT         NOT NULL DEFAULT 'us1',
     "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_site_numbers_pkey" PRIMARY KEY ("id")

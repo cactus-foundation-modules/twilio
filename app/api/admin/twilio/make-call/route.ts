@@ -10,6 +10,7 @@ import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
 import { getSiteUrl } from '@/lib/config/env'
 import { isTwilioConfigured, listIncomingNumbers, placeCall, escapeXml } from '@/modules/twilio/lib/twilio'
+import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 
 const Body = z.object({
@@ -71,7 +72,10 @@ export async function POST(request: NextRequest) {
     `</Response>`
 
   try {
-    await placeCall(callMeAt, fromNumber, twiml)
+    // Dial out through the from-number's own Region so the call is processed
+    // and logged where the rest of that number's traffic lives.
+    const region = await resolveNumberRegion(fromNumber)
+    await placeCall(callMeAt, fromNumber, twiml, region)
     return NextResponse.json({ ok: true })
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to place call', 502)

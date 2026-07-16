@@ -8,6 +8,7 @@ import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
 import { isTwilioConfigured, placeCall, escapeXml } from '@/modules/twilio/lib/twilio'
+import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 import { isValidVoice } from '@/modules/twilio/lib/voices'
 
@@ -47,7 +48,10 @@ export async function POST(request: NextRequest) {
   const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say${voiceAttr}>${escapeXml(greetingMessage)}</Say></Response>`
 
   try {
-    await placeCall(to, parsed.data.phoneNumber, twiml)
+    // The preview goes out through the row's own Region, so what the admin
+    // hears is routed exactly like a real call to that number.
+    const region = await resolveNumberRegion(parsed.data.phoneNumber)
+    await placeCall(to, parsed.data.phoneNumber, twiml, region)
     return NextResponse.json({ ok: true })
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to place preview call', 502)

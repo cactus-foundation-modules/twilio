@@ -1,19 +1,28 @@
 // /api/m/twilio/admin/site-numbers - which of the account's Twilio numbers
-// are on this site, and which one texts are sent from.
+// are on this site, which one texts are sent from, and which Twilio Region
+// each one is routed through.
 // GET  - account numbers merged with site state (also refreshes stored
 //        Twilio metadata and prunes numbers gone from the account)
-// POST - { action: 'add' | 'remove' | 'set-default-sms', sid }
+// POST - { action: 'add' | 'remove' | 'set-default-sms' | 'set-region', sid, region? }
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
-import { isTwilioConfigured, listIncomingNumbers } from '@/modules/twilio/lib/twilio'
+import {
+  isTwilioConfigured,
+  listIncomingNumbers,
+  getNumberRegion,
+  isRegionConfigured,
+  HOME_REGION,
+  TWILIO_REGIONS,
+} from '@/modules/twilio/lib/twilio'
 import {
   addSiteNumber,
   getSiteNumbers,
   removeSiteNumber,
   setDefaultSmsNumber,
+  setSiteNumberRegion,
   syncSiteNumbers,
 } from '@/modules/twilio/lib/numbers'
 
@@ -36,6 +45,12 @@ async function mergedListing() {
       smsCapable: n.smsCapable,
       onSite: !!onSite,
       isDefaultSms: onSite?.isDefaultSms ?? false,
+      // Only on-site numbers carry a stored region; the rest are not this
+      // site's to route.
+      region: onSite?.region ?? null,
+      // Surfaced so the UI can warn that a number's logs are unreachable
+      // before the admin goes looking for them and finds an empty table.
+      regionTokenMissing: onSite ? !isRegionConfigured(onSite.region) : false,
     }
   })
 }
@@ -57,8 +72,9 @@ export async function GET() {
 }
 
 const Body = z.object({
-  action: z.enum(['add', 'remove', 'set-default-sms']),
+  action: z.enum(['add', 'remove', 'set-default-sms', 'set-region']),
   sid: z.string().min(1),
+  region: z.enum(TWILIO_REGIONS).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -72,7 +88,7 @@ export async function POST(request: NextRequest) {
 
   const parsed = Body.safeParse(await request.json())
   if (!parsed.success) return errorResponse('Invalid input')
-  const { action, sid } = parsed.data
+  const { action, sid, region } = parsed.data
 
   try {
     if (action === 'add') {
@@ -81,14 +97,26 @@ export async function POST(request: NextRequest) {
       const account = await listIncomingNumbers()
       const match = account.find((n) => n.sid === sid)
       if (!match) return errorResponse('That number is not on your Twilio account', 404)
+      // Adopt whatever routing the number already has at Twilio rather than
+      // assuming us1 and having the stored copy lie until the next sync.
+      let current = HOME_REGION
+      try {
+        current = await getNumberRegion(match.phoneNumber)
+      } catch {
+        // Routing is readable later via sync; not worth blocking the add.
+      }
       await addSiteNumber({
         phoneSid: match.sid,
         phoneNumber: match.phoneNumber,
         friendlyName: match.friendlyName,
         smsCapable: match.smsCapable,
+        region: current,
       })
     } else if (action === 'remove') {
       await removeSiteNumber(sid)
+    } else if (action === 'set-region') {
+      if (!region) return errorResponse('Pick a country for this number')
+      await setSiteNumberRegion(sid, region)
     } else {
       await setDefaultSmsNumber(sid)
     }

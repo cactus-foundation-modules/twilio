@@ -5,6 +5,7 @@ import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
 import { isTwilioConfigured, listCallsForNumber } from '@/modules/twilio/lib/twilio'
+import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 
 export async function GET(request: NextRequest) {
@@ -20,7 +21,10 @@ export async function GET(request: NextRequest) {
   if (!number) return errorResponse('Invalid phone number')
 
   try {
-    return NextResponse.json({ calls: await listCallsForNumber(number) })
+    // Calls live in the Region the number is routed to and nowhere else, so
+    // the Region is resolved before the listing rather than defaulted.
+    const region = await resolveNumberRegion(number)
+    return NextResponse.json({ calls: await listCallsForNumber(number, region), region })
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to list calls', 502)
   }

@@ -173,7 +173,10 @@ function MakeCallCard({ fromNumber }: { fromNumber: string }) {
   )
 }
 
-function CallLogCard({ calls, loading, error }: { calls: CallLogEntry[] | null; loading: boolean; error: string }) {
+// `phoneNumber` rides along to the recording proxy: a recording lives in the
+// Twilio region its call was processed in, and the recording SID alone does not
+// say which that was.
+function CallLogCard({ calls, loading, error, phoneNumber }: { calls: CallLogEntry[] | null; loading: boolean; error: string; phoneNumber: string }) {
   const [playingSid, setPlayingSid] = useState('')
 
   return (
@@ -221,7 +224,7 @@ function CallLogCard({ calls, loading, error }: { calls: CallLogEntry[] | null; 
                               controls
                               autoPlay
                               preload="none"
-                              src={`/api/m/twilio/admin/recordings/${sid}`}
+                              src={`/api/m/twilio/admin/recordings/${sid}?number=${encodeURIComponent(phoneNumber)}`}
                               style={{ height: '2rem', maxWidth: '16rem' }}
                             />
                           ) : (
@@ -423,6 +426,7 @@ export default function TwilioAdminScreen() {
             calls={logs?.calls ?? null}
             loading={!logs || logs.calls === null}
             error={logs?.callsError ?? ''}
+            phoneNumber={active.phoneNumber}
           />
           <MessageLogCard
             messages={logs?.messages ?? null}
