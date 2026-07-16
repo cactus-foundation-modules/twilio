@@ -24,6 +24,7 @@ const Body = z.object({
   voicemailEnabled: z.boolean().default(false),
   ringTimeout: z.number().int().min(MIN_RING_TIMEOUT).max(MAX_RING_TIMEOUT).default(20),
   voicemailGreeting: z.string().max(500).default(''),
+  closedVoicemailGreeting: z.string().max(500).default(''),
   voicemailVoice: z.string().default(''),
   businessHours: z.array(z.unknown()).default([]),
 })
@@ -48,6 +49,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const voicemailGreeting = parsed.data.voicemailGreeting.trim()
+  const closedVoicemailGreeting = parsed.data.closedVoicemailGreeting.trim()
   const voicemailVoice = parsed.data.voicemailVoice
   if (!isValidVoice(voicemailVoice)) {
     return errorResponse('Unknown voicemail voice')
@@ -89,6 +91,7 @@ export async function PUT(request: NextRequest) {
       voicemailEnabled,
       ringTimeout,
       voicemailGreeting,
+      closedVoicemailGreeting,
       voicemailVoice,
       businessHours,
     })

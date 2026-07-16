@@ -26,6 +26,7 @@ type NumberRow = {
   voicemailEnabled: boolean
   ringTimeout: number
   voicemailGreeting: string
+  closedVoicemailGreeting: string
   voicemailVoice: string
   businessHours: BusinessHours
 }
@@ -106,6 +107,7 @@ export function TwilioForwardingSection() {
           voicemailEnabled: row.voicemailEnabled,
           ringTimeout: row.ringTimeout,
           voicemailGreeting: row.voicemailGreeting,
+          closedVoicemailGreeting: row.closedVoicemailGreeting,
           voicemailVoice: row.voicemailVoice,
           businessHours: row.businessHours,
         }),
@@ -430,6 +432,51 @@ export function TwilioForwardingSection() {
                         )
                       })}
                     </div>
+
+                    {row.voicemailEnabled && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'flex-end',
+                          gap: 'var(--space-4)',
+                          marginTop: 'var(--space-4)',
+                        }}
+                      >
+                        <div className="field" style={{ margin: 0, flex: '2 1 20rem' }}>
+                          <label htmlFor={`vm-closed-greeting-${row.sid}`}>
+                            What callers hear when you&apos;re closed (optional)
+                          </label>
+                          <textarea
+                            id={`vm-closed-greeting-${row.sid}`}
+                            rows={2}
+                            maxLength={500}
+                            value={row.closedVoicemailGreeting}
+                            placeholder="Thanks for calling. We're closed at the moment, but leave a message and we'll ring you back when we open."
+                            onChange={(e) => updateRow(row.sid, { closedVoicemailGreeting: e.target.value })}
+                          />
+                        </div>
+                        {row.closedVoicemailGreeting.trim() && (
+                          <button
+                            className="btn btn-secondary"
+                            disabled={previewingSid === `${row.sid}:closed` || !previewTo}
+                            onClick={() =>
+                              previewGreeting(row, `${row.sid}:closed`, row.closedVoicemailGreeting, row.voicemailVoice)
+                            }
+                          >
+                            {previewingSid === `${row.sid}:closed`
+                              ? 'Calling…'
+                              : previewCalledSid === `${row.sid}:closed`
+                                ? 'Calling you now'
+                                : 'Call me to hear it'}
+                          </button>
+                        )}
+                        <p style={{ flexBasis: '100%', margin: 0, fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+                          Leave this empty and out-of-hours callers hear your usual voicemail
+                          greeting instead. Same voice either way - only the words change.
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

@@ -15,6 +15,8 @@ export type ForwardingRule = {
   /** Seconds the forward-to number rings before voicemail takes the call. */
   ringTimeout: number
   voicemailGreeting: string
+  /** Said instead of voicemailGreeting outside opening hours. Empty = say the usual one. */
+  closedVoicemailGreeting: string
   voicemailVoice: string
   /** Empty array means no schedule: the number is available at any hour. */
   businessHours: BusinessHours
@@ -34,6 +36,7 @@ function mapRow(r: Record<string, unknown>): ForwardingRule {
     voicemailEnabled: r.voicemail_enabled as boolean,
     ringTimeout: Number(r.ring_timeout),
     voicemailGreeting: r.voicemail_greeting as string,
+    closedVoicemailGreeting: r.closed_voicemail_greeting as string,
     voicemailVoice: r.voicemail_voice as string,
     // jsonb comes back already parsed. A row somehow holding a malformed
     // schedule reads as "no schedule" rather than throwing on an inbound call -
@@ -46,8 +49,8 @@ export async function getForwardingRules(): Promise<ForwardingRule[]> {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT id, phone_sid, phone_number, forward_to, enabled,
            greeting_message, greeting_voice, record_calls, show_called_number,
-           voicemail_enabled, ring_timeout, voicemail_greeting, voicemail_voice,
-           business_hours
+           voicemail_enabled, ring_timeout, voicemail_greeting,
+           closed_voicemail_greeting, voicemail_voice, business_hours
     FROM "tw_forwarding_rules"
   `
   return rows.map(mapRow)
@@ -60,8 +63,8 @@ export async function getRuleForNumber(phoneNumber: string): Promise<ForwardingR
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT id, phone_sid, phone_number, forward_to, enabled,
            greeting_message, greeting_voice, record_calls, show_called_number,
-           voicemail_enabled, ring_timeout, voicemail_greeting, voicemail_voice,
-           business_hours
+           voicemail_enabled, ring_timeout, voicemail_greeting,
+           closed_voicemail_greeting, voicemail_voice, business_hours
     FROM "tw_forwarding_rules"
     WHERE phone_number = ${phoneNumber}
     LIMIT 1
@@ -98,6 +101,7 @@ export async function upsertForwardingRule(input: {
   voicemailEnabled: boolean
   ringTimeout: number
   voicemailGreeting: string
+  closedVoicemailGreeting: string
   voicemailVoice: string
   businessHours: BusinessHours
 }): Promise<void> {
@@ -108,12 +112,13 @@ export async function upsertForwardingRule(input: {
     INSERT INTO "tw_forwarding_rules"
       (phone_sid, phone_number, forward_to, enabled, greeting_message, greeting_voice,
        record_calls, show_called_number, voicemail_enabled, ring_timeout,
-       voicemail_greeting, voicemail_voice, business_hours, updated_at)
+       voicemail_greeting, closed_voicemail_greeting, voicemail_voice,
+       business_hours, updated_at)
     VALUES (${input.phoneSid}, ${input.phoneNumber}, ${input.forwardTo}, ${input.enabled},
             ${input.greetingMessage}, ${input.greetingVoice}, ${input.recordCalls},
             ${input.showCalledNumber}, ${input.voicemailEnabled}, ${input.ringTimeout},
-            ${input.voicemailGreeting}, ${input.voicemailVoice},
-            ${businessHours}::jsonb, CURRENT_TIMESTAMP)
+            ${input.voicemailGreeting}, ${input.closedVoicemailGreeting},
+            ${input.voicemailVoice}, ${businessHours}::jsonb, CURRENT_TIMESTAMP)
     ON CONFLICT (phone_sid) DO UPDATE SET
       phone_number       = EXCLUDED.phone_number,
       forward_to         = EXCLUDED.forward_to,
@@ -125,6 +130,7 @@ export async function upsertForwardingRule(input: {
       voicemail_enabled  = EXCLUDED.voicemail_enabled,
       ring_timeout       = EXCLUDED.ring_timeout,
       voicemail_greeting = EXCLUDED.voicemail_greeting,
+      closed_voicemail_greeting = EXCLUDED.closed_voicemail_greeting,
       voicemail_voice    = EXCLUDED.voicemail_voice,
       business_hours     = EXCLUDED.business_hours,
       updated_at         = CURRENT_TIMESTAMP

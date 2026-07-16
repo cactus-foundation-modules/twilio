@@ -21,6 +21,20 @@ export const MIN_VOICEMAIL_SECONDS = 2
 // Said when the admin switched voicemail on but left the greeting empty.
 const FALLBACK_GREETING = 'Sorry, nobody is available to take your call. Please leave a message after the beep.'
 
+// Which greeting a call gets. A call arriving outside opening hours is a
+// different situation to one that rang out - the caller wants to know when the
+// place opens, not that everyone is busy - so it can be answered with its own
+// words. An empty closed greeting means the admin had nothing extra to say, and
+// the usual voicemail greeting covers it.
+export function voicemailGreetingFor(
+  rule: Pick<ForwardingRule, 'voicemailGreeting' | 'closedVoicemailGreeting'>,
+  closed: boolean
+): string {
+  const closedGreeting = rule.closedVoicemailGreeting.trim()
+  if (closed && closedGreeting) return closedGreeting
+  return rule.voicemailGreeting.trim() || FALLBACK_GREETING
+}
+
 // Marks the <Record> action request. Twilio requests the voicemail webhook at
 // two different points in a call and the recording parameters CANNOT tell them
 // apart: a <Dial> carrying record="..." also sends RecordingUrl to its own
@@ -91,11 +105,15 @@ export function planVoicemailRequest(req: VoicemailRequest): VoicemailPlan {
 
 // The <Say> + <Record> pair. Voice ids are validated against the curated list
 // on save and only ever contain [A-Za-z.-], so they need no escaping; the
-// greeting is caller-visible free text and does.
-export function voicemailTwiml(rule: Pick<ForwardingRule, 'voicemailGreeting' | 'voicemailVoice'>): string {
+// greeting is caller-visible free text and does. `closed` says whether the call
+// arrived outside the number's opening hours, which only changes the words: the
+// voice and the recording behaviour are the same either way.
+export function voicemailTwiml(
+  rule: Pick<ForwardingRule, 'voicemailGreeting' | 'closedVoicemailGreeting' | 'voicemailVoice'>,
+  closed = false
+): string {
   const voiceAttr = rule.voicemailVoice ? ` voice="${rule.voicemailVoice}"` : ''
-  const message = rule.voicemailGreeting.trim() || FALLBACK_GREETING
-  const say = `<Say${voiceAttr}>${escapeXml(message)}</Say>`
+  const say = `<Say${voiceAttr}>${escapeXml(voicemailGreetingFor(rule, closed))}</Say>`
   // An explicit action is important: left to itself <Record> re-requests the
   // current document's URL when the recording ends, which would read as a fresh
   // call and loop. The action lands back on the voicemail route, which sees the

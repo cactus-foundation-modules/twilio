@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     "voicemail_greeting" TEXT    NOT NULL DEFAULT '',
     "voicemail_voice"    TEXT    NOT NULL DEFAULT '',
     "business_hours"     JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    -- Said instead of voicemail_greeting when the call arrives outside opening
+    -- hours. Empty means there is nothing special to say, so the usual
+    -- voicemail greeting is used. See migration 006.
+    "closed_voicemail_greeting" TEXT NOT NULL DEFAULT '',
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")

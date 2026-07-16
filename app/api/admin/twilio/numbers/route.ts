@@ -36,6 +36,7 @@ export async function GET() {
           voicemailEnabled: rule?.voicemailEnabled ?? false,
           ringTimeout: rule?.ringTimeout ?? 20,
           voicemailGreeting: rule?.voicemailGreeting ?? '',
+          closedVoicemailGreeting: rule?.closedVoicemailGreeting ?? '',
           voicemailVoice: rule?.voicemailVoice ?? '',
           businessHours: rule?.businessHours ?? [],
         }

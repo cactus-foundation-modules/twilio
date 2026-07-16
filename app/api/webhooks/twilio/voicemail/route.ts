@@ -82,6 +82,10 @@ export async function POST(request: NextRequest) {
     // The rule could have had voicemail switched off mid-call. Hanging up beats
     // recording a message nobody has anywhere to listen to.
     if (!rule?.voicemailEnabled) return twiml('<Hangup/>')
+    // Always the open-hours greeting, never the closed one: getting here means
+    // the voice webhook dialled out, which it only does inside opening hours.
+    // The caller heard the phone ring and nobody picked up, so "we're closed"
+    // would be a lie - even for a call that rings past closing time.
     return twiml(voicemailTwiml(rule))
   }
 

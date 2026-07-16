@@ -37,15 +37,19 @@ export async function POST(request: NextRequest) {
   const rule = called ? await getRuleForNumber(called) : null
   if (!rule) return twiml('<Reject/>')
 
+  // Whether the number is shut is worth knowing separately from whether the
+  // call can be forwarded: a caller ringing out of hours can be told so, rather
+  // than hearing the same "nobody is available" as a call that rang out.
+  const open = await isRuleOpenNow(rule)
   // E.164 targets only ever contain + and digits, so no XML escaping is needed -
   // normalisePhone enforced that on the way in.
-  const canForward = rule.enabled && E164.test(rule.forwardTo) && (await isRuleOpenNow(rule))
+  const canForward = rule.enabled && E164.test(rule.forwardTo) && open
 
   if (!canForward) {
     // Forwarding off, no usable target, or the number is shut for the day. With
     // voicemail on the caller records a message instead of hearing the call
     // greeting, which promises a forward that is not going to happen.
-    return rule.voicemailEnabled ? twiml(voicemailTwiml(rule)) : twiml('<Reject/>')
+    return rule.voicemailEnabled ? twiml(voicemailTwiml(rule, !open)) : twiml('<Reject/>')
   }
 
   // Optional greeting before the dial. Voice ids were validated against the

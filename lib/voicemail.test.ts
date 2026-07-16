@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { planVoicemailRequest, recordingSidFromUrl, MIN_VOICEMAIL_SECONDS } from './voicemail'
+import {
+  planVoicemailRequest,
+  recordingSidFromUrl,
+  voicemailGreetingFor,
+  MIN_VOICEMAIL_SECONDS,
+} from './voicemail'
 
 const SID = 'RE00000000000000000000000000000001'
 const RECORDING_URL = `https://api.twilio.com/2010-04-01/Accounts/AC1/Recordings/${SID}`
@@ -98,6 +103,36 @@ describe('planVoicemailRequest', () => {
 
   it('hangs up on a request it cannot place at all', () => {
     expect(planVoicemailRequest({ stage: null })).toEqual({ action: 'hangup' })
+  })
+})
+
+describe('voicemailGreetingFor', () => {
+  const rule = { voicemailGreeting: 'Nobody is free right now.', closedVoicemailGreeting: 'We are shut.' }
+
+  it('says the closed greeting outside opening hours', () => {
+    expect(voicemailGreetingFor(rule, true)).toBe('We are shut.')
+  })
+
+  it('says the usual greeting inside opening hours', () => {
+    expect(voicemailGreetingFor(rule, false)).toBe('Nobody is free right now.')
+  })
+
+  // The closed greeting is optional, and every rule written before it existed
+  // has an empty one. Those callers must still hear something.
+  it('falls back to the usual greeting when no closed greeting is set', () => {
+    expect(voicemailGreetingFor({ ...rule, closedVoicemailGreeting: '' }, true)).toBe('Nobody is free right now.')
+    expect(voicemailGreetingFor({ ...rule, closedVoicemailGreeting: '   ' }, true)).toBe('Nobody is free right now.')
+  })
+
+  it('falls back to the built-in greeting when both are empty', () => {
+    const said = voicemailGreetingFor({ voicemailGreeting: '', closedVoicemailGreeting: '' }, true)
+    expect(said).toContain('leave a message')
+  })
+
+  it('trims what it says', () => {
+    expect(voicemailGreetingFor({ voicemailGreeting: '', closedVoicemailGreeting: '  We are shut.  ' }, true)).toBe(
+      'We are shut.'
+    )
   })
 })
 

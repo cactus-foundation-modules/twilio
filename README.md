@@ -10,7 +10,9 @@ Provides:
   should use and pick which text-capable number sign-in codes are sent from.
 - **Call forwarding** - an admin page listing the Twilio numbers on your account, each with a
   forward-to number and an on/off switch. Enabled numbers point their voice webhook at this
-  module, which answers with TwiML that dials your chosen number.
+  module, which answers with TwiML that dials your chosen number. Each number can also take
+  a voicemail when nobody answers, and keep opening hours - outside them the phone never
+  rings, and callers can hear a greeting of their own instead of the usual one.
 - **SMS login codes** - admins and members can verify a mobile number and receive their
   two-step sign-in codes by text message instead of email, delivered through the core SMS
   provider hook. If Twilio ever becomes unavailable, codes silently fall back to email.
