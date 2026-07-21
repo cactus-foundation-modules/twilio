@@ -4,15 +4,18 @@
 // (friendly name, capability, routing region) and are refreshed whenever
 // numbers are listed.
 import { prisma } from '@/lib/db/prisma'
+import { getSiteUrl } from '@/lib/config/env'
 import {
   getTwilioConfig,
   getNumberRegion,
   isTwilioRegion,
   sendSms,
   setNumberRegion,
+  setNumberVoiceUrl,
   getHomeRegion,
   type TwilioRegion,
 } from './twilio'
+import { getRuleForNumber } from './forwarding'
 
 export type SiteNumber = {
   phoneSid: string
@@ -98,6 +101,12 @@ export async function setDefaultSmsNumber(phoneSid: string): Promise<void> {
 // Routes a site number to a Region, at Twilio first so a rejected change never
 // leaves the stored value claiming something untrue. Twilio takes up to five
 // minutes to apply it.
+//
+// Webhook config is per-Region at Twilio (setNumberVoiceUrl's doc comment), so
+// the number's voice webhook is re-applied on the NEW Region straight after -
+// otherwise a number with forwarding/voicemail already set up goes silent the
+// moment it starts being processed somewhere that was never given a webhook,
+// with nothing on this site's side showing anything wrong.
 export async function setSiteNumberRegion(phoneSid: string, region: TwilioRegion): Promise<void> {
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT phone_number FROM "tw_site_numbers" WHERE phone_sid = ${phoneSid} LIMIT 1
@@ -110,6 +119,11 @@ export async function setSiteNumberRegion(phoneSid: string, region: TwilioRegion
     UPDATE "tw_site_numbers" SET region = ${region}, updated_at = CURRENT_TIMESTAMP
     WHERE phone_sid = ${phoneSid}
   `
+
+  const rule = await getRuleForNumber(phoneNumber)
+  if (rule && (rule.enabled || rule.voicemailEnabled)) {
+    await setNumberVoiceUrl(phoneSid, `${getSiteUrl()}/api/m/twilio/webhooks/voice`, region)
+  }
 }
 
 // Guarantees exactly one default while any SMS-capable number is on the site:

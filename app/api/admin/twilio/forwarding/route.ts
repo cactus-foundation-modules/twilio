@@ -8,6 +8,7 @@ import { errorResponse } from '@/lib/utils'
 import { getSiteUrl } from '@/lib/config/env'
 import { isTwilioConfigured, setNumberVoiceUrl } from '@/modules/twilio/lib/twilio'
 import { upsertForwardingRule } from '@/modules/twilio/lib/forwarding'
+import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 import { isValidVoice } from '@/modules/twilio/lib/voices'
 import { parseBusinessHours, MIN_RING_TIMEOUT, MAX_RING_TIMEOUT } from '@/modules/twilio/lib/business-hours'
@@ -77,8 +78,14 @@ export async function PUT(request: NextRequest) {
     // it to do; clear the webhook only when both forwarding and voicemail are
     // off, so the number reverts to Twilio's default handling. Voicemail on its
     // own is a perfectly good reason to keep answering calls.
+    //
+    // Written to the number's actual processing Region, not the account's home
+    // Region - webhook config is per-Region at Twilio, so a number routed to
+    // ie1 needs its VoiceUrl set on the ie1 resource or it never rings this
+    // site (the outage this comment is fixing).
     const webhookUrl = `${getSiteUrl()}/api/m/twilio/webhooks/voice`
-    await setNumberVoiceUrl(phoneSid, enabled || voicemailEnabled ? webhookUrl : '')
+    const region = await resolveNumberRegion(phoneNumber)
+    await setNumberVoiceUrl(phoneSid, enabled || voicemailEnabled ? webhookUrl : '', region)
     await upsertForwardingRule({
       phoneSid,
       phoneNumber,

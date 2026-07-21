@@ -513,12 +513,26 @@ export async function placeCall(
 }
 
 // Points the number's voice webhook at `url`, or clears it when url is empty.
-// IncomingPhoneNumbers is account-level, so this runs in the home Region
-// whatever the number's routing.
-export async function setNumberVoiceUrl(sid: string, url: string): Promise<void> {
+//
+// IncomingPhoneNumbers webhook config is per-Region - Twilio's own words:
+// "Your phone number's webhook configuration is Region-specific and may vary
+// between different Regions," with the advice to check the target Region's
+// resource before routing a number there. So `region` must be the Region the
+// number is actually PROCESSED in (its Routes API region, not the account's
+// home Region) - setting it anywhere else leaves the Region that's really
+// answering calls with no webhook, and it silently falls back to Twilio's
+// default handling: hence "the Ireland side never rings the site" even though
+// forwarding looked saved.
+// https://www.twilio.com/docs/global-infrastructure/inbound-processing-api
+export async function setNumberVoiceUrl(
+  sid: string,
+  url: string,
+  region: TwilioRegion = getHomeRegion()
+): Promise<void> {
   await twilioFetch(`/IncomingPhoneNumbers/${encodeURIComponent(sid)}.json`, {
     method: 'POST',
     form: { VoiceUrl: url, VoiceMethod: 'POST' },
+    region,
   })
 }
 

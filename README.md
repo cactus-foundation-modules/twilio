@@ -41,6 +41,11 @@ accounts - Twilio's routing API lives in the US region only. An account homed in
 Australia has all of its numbers handled in its home country automatically, and the module
 hides the per-number country choice accordingly.
 
+Call forwarding's webhook is set separately for each country a number might be routed to -
+Twilio does not carry it over. Changing a number's country here re-applies the existing
+forwarding/voicemail webhook to the new country automatically; a number that has never had
+forwarding configured has nothing to carry over and just needs it set up as normal afterwards.
+
 Use **auth tokens only** (found under Auth tokens on the console's "API keys & tokens" page,
 with the right region selected). Twilio **API keys** (SIDs starting with `SK`) are not usable
 by this module - webhook signatures are validated against the region's auth token, so an API
