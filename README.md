@@ -36,6 +36,11 @@ credentials on Admin > Settings > Twilio.
 All of these are managed on Admin > Settings > Twilio - you pick your account's country there
 and enter the matching Account SID and auth token; you rarely need to set the env vars by hand.
 
+Per-number country routing (and the extra per-country tokens) only exist for United States
+accounts - Twilio's routing API lives in the US region only. An account homed in Ireland or
+Australia has all of its numbers handled in its home country automatically, and the module
+hides the per-number country choice accordingly.
+
 Use **auth tokens only** (found under Auth tokens on the console's "API keys & tokens" page,
 with the right region selected). Twilio **API keys** (SIDs starting with `SK`) are not usable
 by this module - webhook signatures are validated against the region's auth token, so an API

@@ -25,15 +25,21 @@ export type SiteNumber = {
 
 function mapRow(r: Record<string, unknown>): SiteNumber {
   const region = r.region as string
+  const home = getHomeRegion()
   return {
     phoneSid: r.phone_sid as string,
     phoneNumber: r.phone_number as string,
     friendlyName: r.friendly_name as string,
     smsCapable: r.sms_capable as boolean,
     isDefaultSms: r.is_default_sms as boolean,
-    // A region Twilio no longer recognises reads as the us1 default rather
-    // than poisoning every downstream call with an unroutable value.
-    region: isTwilioRegion(region) ? region : getHomeRegion(),
+    // On a non-us1 home every number is processed in the home Region - Twilio
+    // offers per-number routing to us1 accounts only - so the stored value is
+    // overridden rather than trusted (rows written while the site was still
+    // set to United States say us1, and would point every log query at a
+    // Region holding nothing). On a us1 home, a region Twilio no longer
+    // recognises reads as the us1 default rather than poisoning every
+    // downstream call with an unroutable value.
+    region: home !== 'us1' ? home : isTwilioRegion(region) ? region : 'us1',
   }
 }
 
@@ -178,6 +184,11 @@ export async function syncSiteNumbers(
 // logs cover every number on the account, not just the ones added to the site,
 // so the live fallback is load-bearing rather than defensive.
 export async function resolveNumberRegion(phoneNumber: string): Promise<TwilioRegion> {
+  // Non-us1 home: everything is processed in the home Region - stored rows
+  // written while the site was set to United States would say us1 and point
+  // the lookup at a Region holding nothing.
+  const home = getHomeRegion()
+  if (home !== 'us1') return home
   const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
     SELECT region FROM "tw_site_numbers" WHERE phone_number = ${phoneNumber} LIMIT 1
   `
@@ -193,9 +204,12 @@ export async function getDefaultSmsNumber(): Promise<{ phoneNumber: string; regi
   `
   if (!rows[0]) return null
   const region = rows[0].region as string
+  const home = getHomeRegion()
   return {
     phoneNumber: rows[0].phone_number as string,
-    region: isTwilioRegion(region) ? region : getHomeRegion(),
+    // Same rule as mapRow: a non-us1 home processes everything at home, so a
+    // stale stored us1 must not send texts to the wrong Region's API.
+    region: home !== 'us1' ? home : isTwilioRegion(region) ? region : 'us1',
   }
 }
 

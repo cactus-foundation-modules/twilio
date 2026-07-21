@@ -316,44 +316,48 @@ export function TwilioSettingsTab() {
               />
             </div>
 
-            <h3
-              style={{
-                fontSize: 'var(--text-sm)',
-                fontWeight: 'var(--font-semibold)',
-                color: 'var(--color-text)',
-                margin: 'var(--space-5) 0 var(--space-1)',
-              }}
-            >
-              Other countries
-            </h3>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-3)' }}>
-              Only needed if you route a number to another country (set per number below). Twilio
-              issues a <strong>separate</strong> token for each country - your main token
-              won&apos;t work there. Find them in the Twilio console under API keys &amp; tokens,
-              with the country picked in the Region dropdown. Leave blank if you don&apos;t use them.
-            </p>
-            {REGION_OPTIONS.filter((r) => r !== homeRegion).map((r) => {
-              const key = regionTokenKey(r, homeRegion)
-              return (
-                <div className="field" key={key}>
-                  <label>
-                    {REGION_LABELS[r] ?? r} auth token
-                    {setVars[key] && (
-                      <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
-                        (set)
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    type="password"
-                    value={values[key] ?? ''}
-                    placeholder={setVars[key] ? 'Leave blank to keep current value' : '••••••••'}
-                    onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
-                    autoComplete="off"
-                  />
-                </div>
-              )
-            })}
+            {homeRegion === 'us1' && (
+              <>
+                <h3
+                  style={{
+                    fontSize: 'var(--text-sm)',
+                    fontWeight: 'var(--font-semibold)',
+                    color: 'var(--color-text)',
+                    margin: 'var(--space-5) 0 var(--space-1)',
+                  }}
+                >
+                  Other countries
+                </h3>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-3)' }}>
+                  Only needed if you route a number to another country (set per number below). Twilio
+                  issues a <strong>separate</strong> token for each country - your main token
+                  won&apos;t work there. Find them in the Twilio console under API keys &amp; tokens,
+                  with the country picked in the Region dropdown. Leave blank if you don&apos;t use them.
+                </p>
+                {REGION_OPTIONS.filter((r) => r !== homeRegion).map((r) => {
+                  const key = regionTokenKey(r, homeRegion)
+                  return (
+                    <div className="field" key={key}>
+                      <label>
+                        {REGION_LABELS[r] ?? r} auth token
+                        {setVars[key] && (
+                          <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                            (set)
+                          </span>
+                        )}
+                      </label>
+                      <input
+                        type="password"
+                        value={values[key] ?? ''}
+                        placeholder={setVars[key] ? 'Leave blank to keep current value' : '••••••••'}
+                        onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
+                        autoComplete="off"
+                      />
+                    </div>
+                  )
+                })}
+              </>
+            )}
 
             <button className="btn btn-primary" disabled={!hasInput || saving} onClick={handleSave}>
               {saving ? 'Saving…' : 'Save'}
@@ -410,7 +414,7 @@ export function TwilioSettingsTab() {
                   >
                     {n.smsCapable ? 'Texts' : 'No texts'}
                   </span>
-                  {n.onSite && (
+                  {n.onSite && homeRegion === 'us1' && (
                     <label
                       style={{
                         display: 'flex',
@@ -478,12 +482,20 @@ export function TwilioSettingsTab() {
             </div>
           )}
 
-          <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 'var(--space-4) 0 0' }}>
-            <strong>Country</strong> is where Twilio handles and stores that number&apos;s calls,
-            texts and recordings. Changing it takes up to five minutes to bed in at Twilio&apos;s end,
-            and only affects what happens from then on - anything already logged stays in the
-            country it happened in.
-          </p>
+          {homeRegion === 'us1' ? (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 'var(--space-4) 0 0' }}>
+              <strong>Country</strong> is where Twilio handles and stores that number&apos;s calls,
+              texts and recordings. Changing it takes up to five minutes to bed in at Twilio&apos;s end,
+              and only affects what happens from then on - anything already logged stays in the
+              country it happened in.
+            </p>
+          ) : (
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: 'var(--space-4) 0 0' }}>
+              Your Twilio account lives in <strong>{REGION_LABELS[homeRegion] ?? homeRegion}</strong>,
+              so all of its numbers are handled and stored there - no per-number country choice
+              needed (Twilio only offers that to United States accounts).
+            </p>
+          )}
         </div>
       )}
 

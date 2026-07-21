@@ -228,10 +228,20 @@ export async function fetchAccountName(region: TwilioRegion = getHomeRegion()): 
 // ---------------------------------------------------------------------------
 // Inbound Processing Region (Routes API) - the per-number Region control.
 //
-// v3 is reached with the home Region's credentials and host, and covers both
-// voice and messaging no matter which Region a number is routed to.
+// v3 exists in us1 ONLY - routes.dublin.ie1.twilio.com answers 404 "Endpoint
+// is not supported in realm 'ie1'" (seen live, 2026-07-21). It is a feature
+// FOR us1-homed accounts: they hold numbers through us1 and may route each
+// one's inbound processing to another Region. An account homed outside us1
+// has no us1 credentials and no use for it - its numbers are processed in the
+// home Region as a matter of course - so both entry points below short-circuit
+// on a non-us1 home rather than calling an endpoint that cannot answer.
 // https://www.twilio.com/docs/global-infrastructure/inbound-processing-api
 // ---------------------------------------------------------------------------
+
+// Whether per-number Region routing applies to this install at all.
+export function perNumberRoutingAvailable(): boolean {
+  return getHomeRegion() === 'us1'
+}
 
 type RoutesResponse = {
   phone_number?: string
@@ -243,9 +253,11 @@ async function routesFetch(
   phoneNumber: string,
   init?: { method?: string; form?: Record<string, string> }
 ): Promise<RoutesResponse> {
-  const home = getHomeRegion()
-  const { accountSid, authToken } = regionCredentials(home)
-  const host = regionHost('routes', home)
+  // us1 host and us1 credentials, always - the API exists nowhere else, and
+  // callers have already guarded on perNumberRoutingAvailable() so the home
+  // Region (and therefore the main token) is us1 here.
+  const { accountSid, authToken } = regionCredentials('us1')
+  const host = regionHost('routes', 'us1')
 
   const headers: Record<string, string> = { Authorization: authHeader(accountSid, authToken) }
   let body: string | undefined
@@ -259,22 +271,34 @@ async function routesFetch(
     { method: init?.method ?? 'GET', headers, body, signal: AbortSignal.timeout(15_000) }
   )
 
-  if (!res.ok) throw await twilioError(res, home, host)
+  if (!res.ok) throw await twilioError(res, 'us1', host)
   return res.json() as Promise<RoutesResponse>
 }
 
 // A number's inbound processing Region. Twilio reports voice and messaging
 // separately; this module keeps them together (one Region per number), so the
-// voice Region is the answer and an unset/unknown value means the home default.
+// voice Region is the answer and an unset/unknown value means the us1 default.
+// On a non-us1 home there is nothing to ask: the number is processed in the
+// home Region, full stop.
 export async function getNumberRegion(phoneNumber: string): Promise<TwilioRegion> {
+  if (!perNumberRoutingAvailable()) return getHomeRegion()
   const data = await routesFetch(phoneNumber)
   const region = data.voice_region ?? ''
-  return isTwilioRegion(region) ? region : getHomeRegion()
+  return isTwilioRegion(region) ? region : 'us1'
 }
 
 // Routes both voice and messaging for a number to one Region. Twilio takes up
-// to five minutes to apply a routing change.
+// to five minutes to apply a routing change. Only meaningful for us1-homed
+// accounts - anywhere else the message names why it cannot be done.
 export async function setNumberRegion(phoneNumber: string, region: TwilioRegion): Promise<void> {
+  if (!perNumberRoutingAvailable()) {
+    const home = getHomeRegion()
+    throw new Error(
+      `Your Twilio account lives in ${TWILIO_REGION_LABELS[home]}, so its numbers are handled ` +
+      `there automatically - choosing a country per number is only a thing for United States ` +
+      `accounts, and Twilio does not offer it anywhere else.`
+    )
+  }
   await routesFetch(phoneNumber, {
     method: 'POST',
     form: { voiceRegion: region, messagingRegion: region },

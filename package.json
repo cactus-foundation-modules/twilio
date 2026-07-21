@@ -1,6 +1,6 @@
 {
   "name": "cactus-module-twilio",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Twilio module for Cactus",
   "license": "MIT",
   "private": true
