@@ -290,6 +290,14 @@ export async function getNumberRegion(phoneNumber: string): Promise<TwilioRegion
 // Routes both voice and messaging for a number to one Region. Twilio takes up
 // to five minutes to apply a routing change. Only meaningful for us1-homed
 // accounts - anywhere else the message names why it cannot be done.
+//
+// A 200 response is NOT proof Twilio actually applied the change - some
+// number/account combinations accept the request and silently keep the old
+// Region, which read back as "it worked" for a moment and then reverted on
+// the next real check with nothing anywhere explaining why (the exact bug
+// this is fixing). So the response body is checked against what was asked
+// for; a mismatch throws immediately with the Region Twilio actually kept,
+// instead of letting the caller write down something Twilio never agreed to.
 export async function setNumberRegion(phoneNumber: string, region: TwilioRegion): Promise<void> {
   if (!perNumberRoutingAvailable()) {
     const home = getHomeRegion()
@@ -299,10 +307,18 @@ export async function setNumberRegion(phoneNumber: string, region: TwilioRegion)
       `accounts, and Twilio does not offer it anywhere else.`
     )
   }
-  await routesFetch(phoneNumber, {
+  const data = await routesFetch(phoneNumber, {
     method: 'POST',
     form: { voiceRegion: region, messagingRegion: region },
   })
+  const kept = data.voice_region ?? ''
+  if (kept !== region) {
+    throw new Error(
+      `Twilio accepted the request but kept this number on ${TWILIO_REGION_LABELS[isTwilioRegion(kept) ? kept : 'us1']} ` +
+      `rather than moving it to ${TWILIO_REGION_LABELS[region]} - this usually means the account or ` +
+      `number type isn't eligible to route to that country. Twilio's own support can confirm why.`
+    )
+  }
 }
 
 // ---------------------------------------------------------------------------
