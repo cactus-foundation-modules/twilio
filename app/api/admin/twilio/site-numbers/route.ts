@@ -26,14 +26,14 @@ import {
   syncSiteNumbers,
 } from '@/modules/twilio/lib/numbers'
 
-async function mergedListing() {
+async function mergedListing(opts?: { refreshRegions?: boolean }) {
   const account = await listIncomingNumbers()
-  await syncSiteNumbers(account.map((n) => ({
+  const routesErrors = await syncSiteNumbers(account.map((n) => ({
     sid: n.sid,
     phoneNumber: n.phoneNumber,
     friendlyName: n.friendlyName,
     smsCapable: n.smsCapable,
-  })))
+  })), opts)
   const site = await getSiteNumbers()
   const siteBySid = new Map(site.map((s) => [s.phoneSid, s]))
   return account.map((n) => {
@@ -51,6 +51,10 @@ async function mergedListing() {
       // Surfaced so the UI can warn that a number's logs are unreachable
       // before the admin goes looking for them and finds an empty table.
       regionTokenMissing: onSite ? !isRegionConfigured(onSite.region) : false,
+      // A failed live routing read, verbatim - without this a number whose
+      // Routes lookup errors just sits on its stored country looking "stuck",
+      // with nothing anywhere saying the read never happened.
+      routesError: routesErrors.get(n.sid) ?? null,
     }
   })
 }
@@ -117,6 +121,12 @@ export async function POST(request: NextRequest) {
     } else if (action === 'set-region') {
       if (!region) return errorResponse('Pick a country for this number')
       await setSiteNumberRegion(sid, region)
+      // Twilio takes up to five minutes to apply a routing change, during
+      // which the Routes API still reports the old region - re-reading it now
+      // would clobber the change that was accepted a moment ago and the
+      // dropdown would appear to snap back. Trust the stored value here; the
+      // next ordinary listing picks up Twilio's truth once it has bedded in.
+      return NextResponse.json({ numbers: await mergedListing({ refreshRegions: false }) })
     } else {
       await setDefaultSmsNumber(sid)
     }

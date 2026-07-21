@@ -134,25 +134,42 @@ async function ensureDefaultSms(): Promise<void> {
 // Routing regions are re-read from the Routes API (one call per on-site
 // number, in parallel) so a change made directly in the Twilio console is
 // picked up rather than silently disagreeing with the stored copy.
+//
+// refreshRegions: false skips that re-read and trusts the stored values. Used
+// by the listing that follows a routing change: Twilio takes up to five
+// minutes to apply one, so during that window the Routes API still reports
+// the OLD region - re-reading it would silently overwrite the admin's change
+// with stale truth and the dropdown would appear to revert itself (which is
+// exactly what it did before this flag existed).
 export async function syncSiteNumbers(
-  accountNumbers: Array<{ sid: string; phoneNumber: string; friendlyName: string; smsCapable: boolean }>
-): Promise<void> {
+  accountNumbers: Array<{ sid: string; phoneNumber: string; friendlyName: string; smsCapable: boolean }>,
+  opts?: { refreshRegions?: boolean }
+): Promise<Map<string, string>> {
   const bySid = new Map(accountNumbers.map((n) => [n.sid, n]))
   const site = await getSiteNumbers()
 
   const live = site.filter((row) => bySid.has(row.phoneSid))
+  const refreshRegions = opts?.refreshRegions ?? true
+  // Routing-read failures per phone SID. Swallowing these silently is how "the
+  // dropdown is stuck on US" stayed undiagnosable: a number whose Routes
+  // lookup errors just keeps its stored region and nothing anywhere says the
+  // live read never happened. The listing surfaces them to the admin instead.
+  const routesErrors = new Map<string, string>()
   const regions = new Map<string, TwilioRegion>(
-    await Promise.all(
-      live.map(async (row): Promise<[string, TwilioRegion]> => {
-        try {
-          return [row.phoneSid, await getNumberRegion(row.phoneNumber)]
-        } catch {
-          // A Routes lookup failure must not wipe the stored region or block
-          // the listing - keep what we have and try again next time.
-          return [row.phoneSid, row.region]
-        }
-      })
-    )
+    refreshRegions
+      ? await Promise.all(
+          live.map(async (row): Promise<[string, TwilioRegion]> => {
+            try {
+              return [row.phoneSid, await getNumberRegion(row.phoneNumber)]
+            } catch (err) {
+              // A Routes lookup failure must not wipe the stored region or block
+              // the listing - keep what we have, try again next time, and report.
+              routesErrors.set(row.phoneSid, err instanceof Error ? err.message : 'Routing lookup failed')
+              return [row.phoneSid, row.region]
+            }
+          })
+        )
+      : live.map((row): [string, TwilioRegion] => [row.phoneSid, row.region])
   )
 
   for (const row of site) {
@@ -177,6 +194,7 @@ export async function syncSiteNumbers(
     }
   }
   await ensureDefaultSms()
+  return routesErrors
 }
 
 // The Region a number's calls and texts are processed in - the stored value for

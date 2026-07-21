@@ -53,6 +53,7 @@ type AccountNumber = {
   isDefaultSms: boolean
   region: string | null
   regionTokenMissing: boolean
+  routesError: string | null
 }
 
 export function TwilioSettingsTab() {
@@ -467,6 +468,15 @@ export function TwilioSettingsTab() {
                   >
                     {busySid === n.sid ? 'Working…' : n.onSite ? 'Remove from site' : 'Add to site'}
                   </button>
+                  {n.routesError && (
+                    <div
+                      className="alert alert-warning"
+                      style={{ flexBasis: '100%', margin: 0 }}
+                    >
+                      Couldn&apos;t read this number&apos;s live routing from Twilio, so the country
+                      shown is the last one saved here: {n.routesError}
+                    </div>
+                  )}
                   {n.regionTokenMissing && n.region && (
                     <div
                       className="alert alert-warning"
