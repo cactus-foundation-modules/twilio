@@ -10,7 +10,7 @@ import {
   isTwilioRegion,
   sendSms,
   setNumberRegion,
-  HOME_REGION,
+  getHomeRegion,
   type TwilioRegion,
 } from './twilio'
 
@@ -33,7 +33,7 @@ function mapRow(r: Record<string, unknown>): SiteNumber {
     isDefaultSms: r.is_default_sms as boolean,
     // A region Twilio no longer recognises reads as the us1 default rather
     // than poisoning every downstream call with an unroutable value.
-    region: isTwilioRegion(region) ? region : HOME_REGION,
+    region: isTwilioRegion(region) ? region : getHomeRegion(),
   }
 }
 
@@ -195,7 +195,7 @@ export async function getDefaultSmsNumber(): Promise<{ phoneNumber: string; regi
   const region = rows[0].region as string
   return {
     phoneNumber: rows[0].phone_number as string,
-    region: isTwilioRegion(region) ? region : HOME_REGION,
+    region: isTwilioRegion(region) ? region : getHomeRegion(),
   }
 }
 

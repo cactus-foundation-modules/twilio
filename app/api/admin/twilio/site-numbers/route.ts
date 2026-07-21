@@ -14,7 +14,7 @@ import {
   listIncomingNumbers,
   getNumberRegion,
   isRegionConfigured,
-  HOME_REGION,
+  getHomeRegion,
   TWILIO_REGIONS,
 } from '@/modules/twilio/lib/twilio'
 import {
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       if (!match) return errorResponse('That number is not on your Twilio account', 404)
       // Adopt whatever routing the number already has at Twilio rather than
       // assuming us1 and having the stored copy lie until the next sync.
-      let current = HOME_REGION
+      let current = getHomeRegion()
       try {
         current = await getNumberRegion(match.phoneNumber)
       } catch {

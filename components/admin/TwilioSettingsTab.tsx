@@ -13,17 +13,9 @@
 import { useEffect, useState } from 'react'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
 
-const ENV_KEYS = [
-  { key: 'TWILIO_ACCOUNT_SID', label: 'Account SID', placeholder: 'AC…', secret: false },
-  { key: 'TWILIO_AUTH_TOKEN', label: 'Auth token', placeholder: '••••••••', secret: true },
-] as const
-
-// Region-specific tokens. The United States token is the main one above, so
-// only the other two need their own field.
-const REGION_ENV_KEYS = [
-  { key: 'TWILIO_AUTH_TOKEN_IE1', region: 'ie1', label: 'Ireland auth token' },
-  { key: 'TWILIO_AUTH_TOKEN_AU1', region: 'au1', label: 'Australia auth token' },
-] as const
+const ACCOUNT_SID_KEY = { key: 'TWILIO_ACCOUNT_SID', label: 'Account SID', placeholder: 'AC…' } as const
+const MAIN_TOKEN_KEY = 'TWILIO_AUTH_TOKEN'
+const HOME_REGION_KEY = 'TWILIO_HOME_REGION'
 
 const REGION_LABELS: Record<string, string> = {
   us1: 'United States',
@@ -33,6 +25,13 @@ const REGION_LABELS: Record<string, string> = {
 
 const REGION_OPTIONS = ['us1', 'ie1', 'au1'] as const
 
+// The env var holding a region's auth token: the account's home region uses the
+// main TWILIO_AUTH_TOKEN field, every other region routed to gets its own. Keep
+// this in step with regionTokenEnvVar in lib/twilio.ts.
+function regionTokenKey(region: string, homeRegion: string): string {
+  return region === homeRegion ? MAIN_TOKEN_KEY : `TWILIO_AUTH_TOKEN_${region.toUpperCase()}`
+}
+
 type RegionStatus = {
   region: string
   configured: boolean
@@ -41,9 +40,9 @@ type RegionStatus = {
 }
 
 type Status =
-  | { configured: false; regions: RegionStatus[] }
-  | { configured: true; connected: true; accountName: string; fromNumber: string; configuredRegions: string[]; regions: RegionStatus[] }
-  | { configured: true; connected: false; error?: string; regions: RegionStatus[] }
+  | { configured: false; homeRegion: string; regions: RegionStatus[] }
+  | { configured: true; connected: true; homeRegion: string; accountName: string; fromNumber: string; configuredRegions: string[]; regions: RegionStatus[] }
+  | { configured: true; connected: false; homeRegion: string; error?: string; regions: RegionStatus[] }
 
 type AccountNumber = {
   sid: string
@@ -112,13 +111,26 @@ export function TwilioSettingsTab() {
       .catch((err: unknown) => setNumbersError(err instanceof Error ? err.message : 'Failed to load numbers'))
   }, [connected])
 
+  // The Twilio account's home region - its control plane. The server reports the
+  // saved value; the picker below can change it before the admin saves.
+  const homeRegion =
+    values[HOME_REGION_KEY] ?? (status && 'homeRegion' in status ? status.homeRegion : 'us1')
+
+  // Every credential env var in play for the chosen home region: the Account SID,
+  // the main (home) auth token, and a token per OTHER region routed to.
+  const envKeys = [
+    ACCOUNT_SID_KEY.key,
+    MAIN_TOKEN_KEY,
+    ...REGION_OPTIONS.filter((r) => r !== homeRegion).map((r) => regionTokenKey(r, homeRegion)),
+  ]
+
   async function handleSave() {
     setSaving(true)
     setSaved(false)
     setError('')
     try {
-      const vars = [...ENV_KEYS, ...REGION_ENV_KEYS]
-        .map(({ key }) => ({ key, value: values[key] ?? '' }))
+      const vars = [HOME_REGION_KEY, ...envKeys]
+        .map((key) => ({ key, value: values[key] ?? '' }))
         .filter((v) => v.value.trim() !== '')
       const res = await fetch('/api/admin/env', {
         method: 'POST',
@@ -163,11 +175,12 @@ export function TwilioSettingsTab() {
     }
   }
 
-  const hasInput = [...ENV_KEYS, ...REGION_ENV_KEYS].some(({ key }) => (values[key] ?? '').trim() !== '')
+  const hasInput = [HOME_REGION_KEY, ...envKeys].some((key) => (values[key] ?? '').trim() !== '')
 
-  // A region whose token is set but rejected is worth shouting about: the
-  // numbers routed there will show empty logs and no obvious reason why.
-  const brokenRegions = (status?.regions ?? []).filter((r) => r.configured && !r.connected && r.region !== 'us1')
+  // A non-home region whose token is set but rejected is worth shouting about:
+  // the numbers routed there will show empty logs and no obvious reason why.
+  // The home region's own failure is covered by the main "rejected" alert.
+  const brokenRegions = (status?.regions ?? []).filter((r) => r.configured && !r.connected && r.region !== homeRegion)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -187,7 +200,7 @@ export function TwilioSettingsTab() {
 
         {status && (
           status.configured === false ? (
-            <div className="alert alert-warning">Not configured yet - add both values below.</div>
+            <div className="alert alert-warning">Not configured yet - pick your country and add the values below.</div>
           ) : status.connected ? (
             status.fromNumber ? (
               <div className="alert alert-success">
@@ -220,25 +233,59 @@ export function TwilioSettingsTab() {
           </div>
         ) : (
           <>
-            {ENV_KEYS.map(({ key, label, placeholder, secret }) => (
-              <div className="field" key={key}>
-                <label>
-                  {label}
-                  {setVars[key] && (
-                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
-                      (set)
-                    </span>
-                  )}
-                </label>
-                <input
-                  type={secret ? 'password' : 'text'}
-                  value={values[key] ?? ''}
-                  placeholder={setVars[key] ? 'Leave blank to keep current value' : placeholder}
-                  onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
-                  autoComplete="off"
-                />
-              </div>
-            ))}
+            <div className="field">
+              <label htmlFor="twilio-home-region">Twilio account country</label>
+              <select
+                id="twilio-home-region"
+                value={homeRegion}
+                onChange={(e) => setValues((v) => ({ ...v, [HOME_REGION_KEY]: e.target.value }))}
+              >
+                {REGION_OPTIONS.map((r) => (
+                  <option key={r} value={r}>{REGION_LABELS[r]}</option>
+                ))}
+              </select>
+              <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
+                The country your Twilio account itself lives in - shown on the auth-token page of
+                the Twilio console. The Account SID and main auth token below must be the ones for
+                this country, or Twilio rejects them with an &ldquo;Authenticate&rdquo; error.
+              </p>
+            </div>
+
+            <div className="field">
+              <label>
+                {ACCOUNT_SID_KEY.label}
+                {setVars[ACCOUNT_SID_KEY.key] && (
+                  <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                    (set)
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={values[ACCOUNT_SID_KEY.key] ?? ''}
+                placeholder={setVars[ACCOUNT_SID_KEY.key] ? 'Leave blank to keep current value' : ACCOUNT_SID_KEY.placeholder}
+                onChange={(e) => setValues((v) => ({ ...v, [ACCOUNT_SID_KEY.key]: e.target.value }))}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="field">
+              <label>
+                {REGION_LABELS[homeRegion] ?? homeRegion} auth token
+                {setVars[MAIN_TOKEN_KEY] && (
+                  <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                    (set)
+                  </span>
+                )}
+              </label>
+              <input
+                type="password"
+                value={values[MAIN_TOKEN_KEY] ?? ''}
+                placeholder={setVars[MAIN_TOKEN_KEY] ? 'Leave blank to keep current value' : '••••••••'}
+                onChange={(e) => setValues((v) => ({ ...v, [MAIN_TOKEN_KEY]: e.target.value }))}
+                autoComplete="off"
+              />
+            </div>
 
             <h3
               style={{
@@ -251,30 +298,33 @@ export function TwilioSettingsTab() {
               Other countries
             </h3>
             <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-3)' }}>
-              Only needed if you route a number to Ireland or Australia (set per number below).
-              Twilio issues a <strong>separate</strong> token for each country - your main token
+              Only needed if you route a number to another country (set per number below). Twilio
+              issues a <strong>separate</strong> token for each country - your main token
               won&apos;t work there. Find them in the Twilio console under API keys &amp; tokens,
               with the country picked in the Region dropdown. Leave blank if you don&apos;t use them.
             </p>
-            {REGION_ENV_KEYS.map(({ key, label }) => (
-              <div className="field" key={key}>
-                <label>
-                  {label}
-                  {setVars[key] && (
-                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
-                      (set)
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={values[key] ?? ''}
-                  placeholder={setVars[key] ? 'Leave blank to keep current value' : '••••••••'}
-                  onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
-                  autoComplete="off"
-                />
-              </div>
-            ))}
+            {REGION_OPTIONS.filter((r) => r !== homeRegion).map((r) => {
+              const key = regionTokenKey(r, homeRegion)
+              return (
+                <div className="field" key={key}>
+                  <label>
+                    {REGION_LABELS[r] ?? r} auth token
+                    {setVars[key] && (
+                      <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                        (set)
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="password"
+                    value={values[key] ?? ''}
+                    placeholder={setVars[key] ? 'Leave blank to keep current value' : '••••••••'}
+                    onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
+                    autoComplete="off"
+                  />
+                </div>
+              )
+            })}
 
             <button className="btn btn-primary" disabled={!hasInput || saving} onClick={handleSave}>
               {saving ? 'Saving…' : 'Save'}

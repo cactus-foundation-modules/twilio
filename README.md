@@ -26,8 +26,15 @@ credentials on Admin > Settings > Twilio.
 
 | Variable | Purpose |
 | --- | --- |
-| `TWILIO_ACCOUNT_SID` | Twilio Account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth token |
+| `TWILIO_HOME_REGION` | The region your Twilio account lives in - `us1` (default), `ie1` or `au1`. Must match the console's auth-token page, or credentials are rejected with an "Authenticate" error. |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID (the same value in every region) |
+| `TWILIO_AUTH_TOKEN` | Auth token for the home region |
+| `TWILIO_AUTH_TOKEN_US1` | Auth token for the US, if you route numbers there and it is not your home region |
+| `TWILIO_AUTH_TOKEN_IE1` | Auth token for Ireland, if you route numbers there and it is not your home region |
+| `TWILIO_AUTH_TOKEN_AU1` | Auth token for Australia, if you route numbers there and it is not your home region |
+
+All of these are managed on Admin > Settings > Twilio - you pick your account's country there
+and enter the matching Account SID and auth token; you rarely need to set the env vars by hand.
 
 The number texts are sent from is no longer an environment variable - it is chosen from
 the account's numbers on Admin > Settings > Twilio, and only text-capable numbers qualify.

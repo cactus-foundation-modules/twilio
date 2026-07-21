@@ -12,7 +12,7 @@ import {
   fetchAccountName,
   getConfiguredRegions,
   isRegionConfigured,
-  HOME_REGION,
+  getHomeRegion,
   TWILIO_REGIONS,
   type TwilioRegion,
 } from '@/modules/twilio/lib/twilio'
@@ -47,9 +47,12 @@ export async function GET() {
   if (!user) return errorResponse('Not authenticated', 401)
   if (!(await hasPermission(user, 'twilio.manage'))) return errorResponse('Forbidden', 403)
 
+  const homeRegion = getHomeRegion()
+
   if (!isTwilioConfigured()) {
     return NextResponse.json({
       configured: false,
+      homeRegion,
       regions: TWILIO_REGIONS.map((region) => ({ region, configured: false, connected: false })),
     })
   }
@@ -59,11 +62,12 @@ export async function GET() {
     getDefaultSmsNumber().catch(() => null),
   ])
 
-  const home = regions.find((r) => r.region === HOME_REGION)
+  const home = regions.find((r) => r.region === homeRegion)
   if (!home?.connected) {
     return NextResponse.json({
       configured: true,
       connected: false,
+      homeRegion,
       error: home?.error ?? 'Connection failed',
       regions,
     })
@@ -72,6 +76,7 @@ export async function GET() {
   return NextResponse.json({
     configured: true,
     connected: true,
+    homeRegion,
     accountName: home.accountName ?? 'Twilio account',
     fromNumber: fromNumber?.phoneNumber ?? '',
     configuredRegions: getConfiguredRegions(),

@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
-import { isTwilioConfigured, fetchRecordingAudio, HOME_REGION } from '@/modules/twilio/lib/twilio'
+import { isTwilioConfigured, fetchRecordingAudio, getHomeRegion } from '@/modules/twilio/lib/twilio'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 
@@ -30,7 +30,7 @@ export async function GET(
 
   try {
     const number = normalisePhone(request.nextUrl.searchParams.get('number') ?? '')
-    const region = number ? await resolveNumberRegion(number) : HOME_REGION
+    const region = number ? await resolveNumberRegion(number) : getHomeRegion()
 
     const upstream = await fetchRecordingAudio(sid, region)
     if (!upstream.ok || !upstream.body) {
