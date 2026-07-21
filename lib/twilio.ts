@@ -128,7 +128,10 @@ async function twilioError(res: Response, region: TwilioRegion, host: string): P
       ? ` The ${label} endpoint rejected these credentials. Check the Account SID and the ` +
         `${region.toUpperCase()} auth token, and that ${label} is the region your Twilio ` +
         `account is homed in (set on the Twilio settings tab).`
-      : ''
+      : code === 20404
+        ? ` Twilio could not find that resource - if this happened on the connection test, ` +
+          `the Account SID is probably wrong (it must start with AC, not SK).`
+        : ''
   return new TwilioApiError(region, host, res.status, code, `${base} ${context}${hint}`)
 }
 
@@ -156,9 +159,30 @@ export function getConfiguredRegions(): TwilioRegion[] {
     .sort((a, b) => (a === home ? -1 : b === home ? 1 : 0))
 }
 
+// The one Account SID: AC + 32 hex. The classic paste-mistake is an API key
+// SID (SK + 32 hex) - Twilio then 404s /Accounts/SK….json with error 20404,
+// which reads like gibberish. Catch it here and say what actually happened.
+const ACCOUNT_SID_RE = /^AC[0-9a-fA-F]{32}$/
+
+export function accountSidProblem(accountSid: string): string | null {
+  if (ACCOUNT_SID_RE.test(accountSid)) return null
+  if (/^SK/i.test(accountSid)) {
+    return (
+      'The Account SID is set to an API key SID (starts with SK). This module cannot use ' +
+      'API keys - it needs the Account SID (starts with AC) plus the auth token for each ' +
+      'region, because Twilio signs webhooks with the auth token. Both are on the ' +
+      '"API keys & tokens" page of the Twilio console: the Account SID at the top, and the ' +
+      'Primary auth token per region under Auth tokens.'
+    )
+  }
+  return 'The Account SID does not look right - it should start with AC followed by 32 characters.'
+}
+
 function regionCredentials(region: TwilioRegion): { accountSid: string; authToken: string } {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   if (!accountSid) throw new Error('Twilio is not configured')
+  const sidProblem = accountSidProblem(accountSid)
+  if (sidProblem) throw new Error(sidProblem)
   const authToken = process.env[regionTokenEnvVar(region)]
   if (!authToken) throw new MissingRegionTokenError(region)
   return { accountSid, authToken }

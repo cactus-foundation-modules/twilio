@@ -36,6 +36,12 @@ credentials on Admin > Settings > Twilio.
 All of these are managed on Admin > Settings > Twilio - you pick your account's country there
 and enter the matching Account SID and auth token; you rarely need to set the env vars by hand.
 
+Use **auth tokens only** (found under Auth tokens on the console's "API keys & tokens" page,
+with the right region selected). Twilio **API keys** (SIDs starting with `SK`) are not usable
+by this module - webhook signatures are validated against the region's auth token, so an API
+key would silently break call forwarding even if REST calls were made to accept it. The
+settings tab and the connection test both reject `SK…` values with an explanation.
+
 The number texts are sent from is no longer an environment variable - it is chosen from
 the account's numbers on Admin > Settings > Twilio, and only text-capable numbers qualify.
 

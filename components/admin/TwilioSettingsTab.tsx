@@ -124,7 +124,33 @@ export function TwilioSettingsTab() {
     ...REGION_OPTIONS.filter((r) => r !== homeRegion).map((r) => regionTokenKey(r, homeRegion)),
   ]
 
+  // Catch the classic credential mix-ups before they're saved and Twilio starts
+  // returning riddles: an API key SID (SK…) where the Account SID (AC…) belongs,
+  // or an SK… value pasted into an auth-token field.
+  function credentialProblem(): string | null {
+    const sid = (values[ACCOUNT_SID_KEY.key] ?? '').trim()
+    if (sid !== '' && !/^AC[0-9a-fA-F]{32}$/.test(sid)) {
+      return /^SK/i.test(sid)
+        ? 'That Account SID is an API key SID (starts with SK). This module needs the Account SID, which starts with AC - it is at the top of the "API keys & tokens" page in the Twilio console, and is the same in every region.'
+        : 'The Account SID should start with AC followed by 32 characters - it is at the top of the "API keys & tokens" page in the Twilio console.'
+    }
+    for (const key of envKeys) {
+      if (key === ACCOUNT_SID_KEY.key) continue
+      const value = (values[key] ?? '').trim()
+      if (/^SK/i.test(value)) {
+        return 'One of the auth-token fields holds an API key SID (starts with SK). Auth tokens are found under "Auth tokens" on the "API keys & tokens" page, with the right region picked - API keys will not work here.'
+      }
+    }
+    return null
+  }
+
   async function handleSave() {
+    const problem = credentialProblem()
+    if (problem) {
+      setSaved(false)
+      setError(problem)
+      return
+    }
     setSaving(true)
     setSaved(false)
     setError('')
@@ -188,7 +214,10 @@ export function TwilioSettingsTab() {
         <h2 className="card-title">Twilio</h2>
         <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
           Connect your Twilio account to manage call forwarding and send sign-in codes by text
-          message. Find your Account SID and Auth token on the Twilio console dashboard.
+          message. Everything you need is on the <strong>API keys &amp; tokens</strong> page of
+          the Twilio console: the Account SID (starts with AC, same in every region) at the top,
+          and a <strong>Primary auth token</strong> per region under Auth tokens. API keys
+          (SIDs starting with SK) won&apos;t work here.
         </p>
 
         {error && <div className="alert alert-danger">{error}</div>}
