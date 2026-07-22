@@ -243,10 +243,15 @@ export function perNumberRoutingAvailable(): boolean {
   return getHomeRegion() === 'us1'
 }
 
+// Unlike the 2010-04-01 API, the Routes v3 API speaks camelCase in BOTH
+// directions - the response is { phoneNumber, voiceRegion, messagingRegion },
+// not snake_case (verified live 2026-07-22). Reading voice_region here made
+// every answer look blank, so the UI showed the us1 default whatever Twilio
+// said, and a successful region change read back as "kept on United States".
 type RoutesResponse = {
-  phone_number?: string
-  voice_region?: string
-  messaging_region?: string
+  phoneNumber?: string
+  voiceRegion?: string
+  messagingRegion?: string
 }
 
 async function routesFetch(
@@ -283,7 +288,7 @@ async function routesFetch(
 export async function getNumberRegion(phoneNumber: string): Promise<TwilioRegion> {
   if (!perNumberRoutingAvailable()) return getHomeRegion()
   const data = await routesFetch(phoneNumber)
-  const region = data.voice_region ?? ''
+  const region = data.voiceRegion ?? ''
   return isTwilioRegion(region) ? region : 'us1'
 }
 
@@ -311,7 +316,7 @@ export async function setNumberRegion(phoneNumber: string, region: TwilioRegion)
     method: 'POST',
     form: { voiceRegion: region, messagingRegion: region },
   })
-  const kept = data.voice_region ?? ''
+  const kept = data.voiceRegion ?? ''
   if (kept !== region) {
     throw new Error(
       `Twilio accepted the request but kept this number on ${TWILIO_REGION_LABELS[isTwilioRegion(kept) ? kept : 'us1']} ` +
