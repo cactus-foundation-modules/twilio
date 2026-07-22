@@ -4,6 +4,7 @@ import {
   recordingSidFromUrl,
   voicemailGreetingFor,
   voicemailGreetingTwiml,
+  voicemailTwiml,
   MIN_VOICEMAIL_SECONDS,
 } from './voicemail'
 
@@ -50,6 +51,45 @@ describe('planVoicemailRequest', () => {
           recordingDuration: '0',
         })
       ).toEqual({ action: 'take-message' })
+    })
+  })
+
+  describe('the second forwarding leg', () => {
+    it('tries the second number before voicemail when one is configured', () => {
+      expect(
+        planVoicemailRequest({ stage: null, dialCallStatus: 'no-answer' }, { hasSecondLeg: true })
+      ).toEqual({ action: 'dial-second' })
+    })
+
+    // The second leg's own action request carries the leg marker: there is no
+    // third number, so it must not loop back round to dial-second forever.
+    it('takes a message when the second leg also rang out', () => {
+      expect(
+        planVoicemailRequest(
+          { stage: null, leg: '2', dialCallStatus: 'no-answer' },
+          { hasSecondLeg: true }
+        )
+      ).toEqual({ action: 'take-message' })
+    })
+
+    it('hangs up when the second leg was answered', () => {
+      expect(
+        planVoicemailRequest(
+          { stage: null, leg: '2', dialCallStatus: 'completed' },
+          { hasSecondLeg: true }
+        )
+      ).toEqual({ action: 'hangup' })
+    })
+
+    // A recording request must never be re-routed into another dial, whatever
+    // the rule says about second numbers.
+    it('still logs a recording with a second leg configured', () => {
+      expect(
+        planVoicemailRequest(
+          { stage: 'recording', recordingSid: SID, recordingDuration: '12' },
+          { hasSecondLeg: true }
+        )
+      ).toEqual({ action: 'log-message', recordingSid: SID, durationSeconds: 12 })
     })
   })
 
@@ -182,6 +222,32 @@ describe('voicemailGreetingTwiml', () => {
       true
     )
     expect(twiml).toContain('/api/m/twilio/public/audio/media123')
+  })
+})
+
+describe('voicemailTwiml transcription', () => {
+  beforeAll(() => {
+    process.env.SITE_URL = 'https://example.test'
+  })
+
+  const rule = {
+    voicemailGreeting: 'Nobody is free right now.',
+    closedVoicemailGreeting: '',
+    voicemailVoice: 'Polly.Amy',
+    voicemailAudioMediaId: '',
+    closedVoicemailAudioMediaId: '',
+    transcribeVoicemail: false,
+  }
+
+  it('asks Twilio to transcribe when the number opted in', () => {
+    const twiml = voicemailTwiml({ ...rule, transcribeVoicemail: true })
+    expect(twiml).toContain('transcribe="true"')
+    expect(twiml).toContain('/api/m/twilio/webhooks/transcription')
+  })
+
+  it('leaves transcription out otherwise', () => {
+    const twiml = voicemailTwiml(rule)
+    expect(twiml).not.toContain('transcribe=')
   })
 })
 

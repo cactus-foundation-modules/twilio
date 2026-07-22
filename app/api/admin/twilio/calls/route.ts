@@ -8,7 +8,7 @@ import { errorResponse } from '@/lib/utils'
 import { isTwilioConfigured, listCallsForNumber } from '@/modules/twilio/lib/twilio'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
-import { filterVoicemailSids } from '@/modules/twilio/lib/voicemail-log'
+import { filterVoicemailSids, transcriptionsForSids } from '@/modules/twilio/lib/voicemail-log'
 
 export async function GET(request: NextRequest) {
   const user = await getSessionFromCookie()
@@ -32,10 +32,25 @@ export async function GET(request: NextRequest) {
     // listing cannot say, so the answer comes from the rows the voicemail
     // webhook wrote. Recordings made before this module started keeping the log
     // have no row and read as ordinary call recordings.
-    const voicemailSids = await filterVoicemailSids(calls.flatMap((c) => c.recordingSids))
+    const allSids = calls.flatMap((c) => c.recordingSids)
+    const [voicemailSids, transcriptions] = await Promise.all([
+      filterVoicemailSids(allSids),
+      transcriptionsForSids(allSids),
+    ])
 
     return NextResponse.json({
-      calls: calls.map((c) => ({ ...c, voicemailSids: c.recordingSids.filter((sid) => voicemailSids.has(sid)) })),
+      calls: calls.map((c) => ({
+        ...c,
+        voicemailSids: c.recordingSids.filter((sid) => voicemailSids.has(sid)),
+        // Transcription per recording SID, where one was asked for: the call
+        // log shows the words under the voicemail's play button.
+        transcriptions: Object.fromEntries(
+          c.recordingSids.flatMap((sid) => {
+            const t = transcriptions.get(sid)
+            return t ? [[sid, t]] : []
+          })
+        ),
+      })),
       region,
     })
   } catch (err) {

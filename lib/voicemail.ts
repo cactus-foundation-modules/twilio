@@ -58,6 +58,21 @@ export function voicemailRecordingUrl(): string {
   return `${voicemailUrl()}?stage=${RECORDING_STAGE}`
 }
 
+// Marks the second forwarding leg's <Dial> action. Same trick as the recording
+// stage: the dial action payloads for leg one and leg two are indistinguishable,
+// so the leg is stated on the URL rather than guessed from the params.
+export const SECOND_LEG = '2'
+
+export function secondLegUrl(): string {
+  return `${voicemailUrl()}?leg=${SECOND_LEG}`
+}
+
+// Where Twilio posts a voicemail's transcription once it is ready - minutes
+// after the recording, in a request of its own.
+export function transcriptionUrl(): string {
+  return `${getSiteUrl()}/api/m/twilio/webhooks/transcription`
+}
+
 // The recording SID out of a RecordingUrl, which ends in it.
 export function recordingSidFromUrl(url: string): string {
   const last = url.split('?')[0]!.split('/').pop() ?? ''
@@ -67,6 +82,8 @@ export function recordingSidFromUrl(url: string): string {
 export type VoicemailRequest = {
   /** The `stage` query parameter of the request URL, if any. */
   stage: string | null
+  /** The `leg` query parameter: SECOND_LEG on the second dial's action request. */
+  leg?: string | null
   dialCallStatus?: string
   recordingSid?: string
   recordingUrl?: string
@@ -76,15 +93,26 @@ export type VoicemailRequest = {
 export type VoicemailPlan =
   /** A message worth keeping: log it against the call, then hang up. */
   | { action: 'log-message'; recordingSid: string; durationSeconds: number }
-  /** Nobody got through: play the greeting and record a message. */
+  /** First leg unanswered and a second number is configured: ring that one. */
+  | { action: 'dial-second' }
+  /**
+   * Nobody got through on any leg - the call is definitively missed. The
+   * route takes a message if voicemail is on, and this is also the one point
+   * where missed-call notifications fire.
+   */
   | { action: 'take-message' }
   /** Nothing to do. Hanging up is never wrong here, only sometimes wasteful. */
   | { action: 'hangup' }
 
 // What the voicemail webhook should do with a request. Pure, so the awkward
-// parts - which stage is this, and is this recording actually a message - are
-// decided somewhere they can be tested without a phone call.
-export function planVoicemailRequest(req: VoicemailRequest): VoicemailPlan {
+// parts - which stage is this, is this recording actually a message, and is
+// there another leg still to try - are decided somewhere they can be tested
+// without a phone call. `hasSecondLeg` says whether the rule holds a usable
+// second forward-to number.
+export function planVoicemailRequest(
+  req: VoicemailRequest,
+  ctx: { hasSecondLeg: boolean } = { hasSecondLeg: false }
+): VoicemailPlan {
   // The <Record> finished. Identified by the marker this module puts on the
   // URL, never by the recording parameters: see RECORDING_STAGE.
   if (req.stage === RECORDING_STAGE) {
@@ -99,7 +127,13 @@ export function planVoicemailRequest(req: VoicemailRequest): VoicemailPlan {
   // the stage marker - one in flight across a deploy, say. Those hang up, which
   // is the safe way to be wrong: the <Record> action exists to stop the
   // recording re-requesting its own URL and looping.
-  if (NO_ANSWER_STATUSES.has(req.dialCallStatus ?? '')) return { action: 'take-message' }
+  if (NO_ANSWER_STATUSES.has(req.dialCallStatus ?? '')) {
+    // A second forward-to number gets its turn before voicemail does - unless
+    // this request IS the second leg reporting back, which is what the leg
+    // marker on the URL is for.
+    if (ctx.hasSecondLeg && req.leg !== SECOND_LEG) return { action: 'dial-second' }
+    return { action: 'take-message' }
+  }
 
   return { action: 'hangup' }
 }
@@ -140,17 +174,25 @@ export function voicemailTwiml(
   rule: Pick<
     ForwardingRule,
     'voicemailGreeting' | 'closedVoicemailGreeting' | 'voicemailVoice' |
-    'voicemailAudioMediaId' | 'closedVoicemailAudioMediaId'
+    'voicemailAudioMediaId' | 'closedVoicemailAudioMediaId' | 'transcribeVoicemail'
   >,
   closed = false
 ): string {
   const say = voicemailGreetingTwiml(rule, closed)
+  // Transcription is per number: Twilio types the message up minutes later and
+  // posts it to the transcription webhook, which files it on the voicemail row.
+  // (Twilio only transcribes recordings between 2 and 120 seconds, which is
+  // exactly the window MIN/MAX_VOICEMAIL_SECONDS already enforce.)
+  const transcribeAttrs = rule.transcribeVoicemail
+    ? ` transcribe="true" transcribeCallback="${escapeXml(transcriptionUrl())}"`
+    : ''
   // An explicit action is important: left to itself <Record> re-requests the
   // current document's URL when the recording ends, which would read as a fresh
   // call and loop. The action lands back on the voicemail route, which sees the
   // recording stage and hangs up.
   const record =
-    `<Record maxLength="${MAX_VOICEMAIL_SECONDS}" playBeep="true" trim="trim-silence" ` +
+    `<Record maxLength="${MAX_VOICEMAIL_SECONDS}" playBeep="true" trim="trim-silence"` +
+    `${transcribeAttrs} ` +
     `action="${escapeXml(voicemailRecordingUrl())}" method="POST"/>`
   return `${say}${record}<Hangup/>`
 }

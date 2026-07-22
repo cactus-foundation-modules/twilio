@@ -1,6 +1,6 @@
 {
   "name": "twilio",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
   "requiresCoreVersion": "0.5.303",
@@ -30,12 +30,15 @@
   ],
   "teardown": [
     "tw_forwarding_rules",
+    "tw_settings",
     "tw_site_numbers",
     "tw_verification_codes",
     "tw_voicemails"
   ],
   "cookieCategories": [],
-  "cronJobs": [],
+  "cronJobs": [
+    { "path": "/api/m/twilio/cron/retention", "schedule": "20 4 * * *" }
+  ],
   "memberExtensions": {
     "activityTypes": [],
     "notificationCategories": [],

@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     "greeting_audio_media_id"         TEXT NOT NULL DEFAULT '',
     "voicemail_audio_media_id"        TEXT NOT NULL DEFAULT '',
     "closed_voicemail_audio_media_id" TEXT NOT NULL DEFAULT '',
+    -- Auto-text on missed call, one-off holiday closures, voicemail
+    -- transcription, withheld-number handling ('allow'|'voicemail'|'reject')
+    -- and an optional second forward-to leg. See migration 008.
+    "missed_call_sms_enabled" BOOLEAN NOT NULL DEFAULT false,
+    "missed_call_sms_message" TEXT    NOT NULL DEFAULT '',
+    "holiday_dates"           JSONB   NOT NULL DEFAULT '[]'::jsonb,
+    "transcribe_voicemail"    BOOLEAN NOT NULL DEFAULT false,
+    "anonymous_callers"       TEXT    NOT NULL DEFAULT 'allow',
+    "forward_to_second"       TEXT    NOT NULL DEFAULT '',
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")
@@ -86,10 +95,30 @@ CREATE TABLE IF NOT EXISTS "tw_voicemails" (
     "from_number"      TEXT         NOT NULL DEFAULT '',
     "to_number"        TEXT         NOT NULL DEFAULT '',
     "duration_seconds" INTEGER      NOT NULL DEFAULT 0,
+    -- Twilio's transcription of the message, when the number asked for one.
+    -- status: '' (never requested) | 'pending' | 'completed' | 'failed'.
+    -- See migration 008.
+    "transcription_text"   TEXT NOT NULL DEFAULT '',
+    "transcription_status" TEXT NOT NULL DEFAULT '',
     "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_voicemails_pkey" PRIMARY KEY ("recording_sid")
 );
 CREATE INDEX IF NOT EXISTS "tw_voicemails_call_sid_idx" ON "tw_voicemails" ("call_sid");
+
+-- ---------------------------------------------------------------------------
+-- Module settings - one singleton row. Email alerts for voicemails and missed
+-- calls, and how long recordings are kept (0 = forever). See migration 008.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "tw_settings" (
+    "id"                       TEXT         NOT NULL DEFAULT 'singleton',
+    "notify_voicemail_email"   BOOLEAN      NOT NULL DEFAULT false,
+    "notify_missed_call_email" BOOLEAN      NOT NULL DEFAULT false,
+    "notify_email"             TEXT         NOT NULL DEFAULT '',
+    "retention_days"           INTEGER      NOT NULL DEFAULT 0,
+    "created_at"               TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"               TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tw_settings_pkey" PRIMARY KEY ("id")
+);
 
 -- ---------------------------------------------------------------------------
 -- Phone verification codes for SMS 2FA enrolment (admins and members).

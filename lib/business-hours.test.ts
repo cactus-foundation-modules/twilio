@@ -4,8 +4,10 @@
 // customer's phone silently not ringing.
 import { describe, it, expect } from 'vitest'
 import {
+  isHolidayOn,
   isOpenAt,
   parseBusinessHours,
+  parseHolidayDates,
   defaultBusinessHours,
   type BusinessHours,
 } from './business-hours'
@@ -132,5 +134,37 @@ describe('parseBusinessHours', () => {
 
   it('rejects a missing closed flag', () => {
     expect(parseBusinessHours([{ day: 1, open: '09:00', close: '17:00' }])).toBeNull()
+  })
+})
+
+describe('parseHolidayDates', () => {
+  it('accepts, sorts and deduplicates real dates', () => {
+    expect(parseHolidayDates(['2026-12-26', '2026-12-25', '2026-12-25'])).toEqual([
+      '2026-12-25',
+      '2026-12-26',
+    ])
+    expect(parseHolidayDates([])).toEqual([])
+  })
+
+  it('rejects anything that is not a list of YYYY-MM-DD strings', () => {
+    expect(parseHolidayDates('2026-12-25')).toBeNull()
+    expect(parseHolidayDates([20261225])).toBeNull()
+    expect(parseHolidayDates(['25-12-2026'])).toBeNull()
+    expect(parseHolidayDates(['2026-13-01'])).toBeNull()
+    expect(parseHolidayDates(['2026-12-32'])).toBeNull()
+    expect(parseHolidayDates(['2026-12-25', ''])).toBeNull()
+  })
+})
+
+describe('isHolidayOn', () => {
+  it('matches the calendar date in the given timezone, not UTC', () => {
+    // 23:30 UTC on the 24th is already Christmas Day in Sydney.
+    const lateChristmasEve = new Date('2026-12-24T23:30:00Z')
+    expect(isHolidayOn(['2026-12-25'], 'Australia/Sydney', lateChristmasEve)).toBe(true)
+    expect(isHolidayOn(['2026-12-25'], 'Europe/London', lateChristmasEve)).toBe(false)
+  })
+
+  it('is never a holiday with no dates set', () => {
+    expect(isHolidayOn([], 'UTC', new Date('2026-12-25T12:00:00Z'))).toBe(false)
   })
 })

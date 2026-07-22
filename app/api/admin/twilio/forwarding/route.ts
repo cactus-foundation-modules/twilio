@@ -7,17 +7,19 @@ import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
 import { getSiteUrl } from '@/lib/config/env'
 import { isTwilioConfigured, setNumberVoiceUrl } from '@/modules/twilio/lib/twilio'
-import { upsertForwardingRule } from '@/modules/twilio/lib/forwarding'
+import { isAnonymousCallerMode, upsertForwardingRule } from '@/modules/twilio/lib/forwarding'
+import { MAX_MISSED_CALL_SMS_LENGTH } from '@/modules/twilio/lib/notify'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 import { isValidVoice } from '@/modules/twilio/lib/voices'
-import { parseBusinessHours, MIN_RING_TIMEOUT, MAX_RING_TIMEOUT } from '@/modules/twilio/lib/business-hours'
+import { parseBusinessHours, parseHolidayDates, MIN_RING_TIMEOUT, MAX_RING_TIMEOUT } from '@/modules/twilio/lib/business-hours'
 import { prisma } from '@/lib/db/prisma'
 
 const Body = z.object({
   phoneSid: z.string().min(1),
   phoneNumber: z.string().min(1),
   forwardTo: z.string(),
+  forwardToSecond: z.string().default(''),
   enabled: z.boolean(),
   greetingMessage: z.string().max(500).default(''),
   greetingVoice: z.string().default(''),
@@ -29,6 +31,11 @@ const Body = z.object({
   closedVoicemailGreeting: z.string().max(500).default(''),
   voicemailVoice: z.string().default(''),
   businessHours: z.array(z.unknown()).default([]),
+  holidayDates: z.array(z.unknown()).default([]),
+  missedCallSmsEnabled: z.boolean().default(false),
+  missedCallSmsMessage: z.string().max(MAX_MISSED_CALL_SMS_LENGTH).default(''),
+  transcribeVoicemail: z.boolean().default(false),
+  anonymousCallers: z.string().default('allow'),
   greetingAudioMediaId: z.string().default(''),
   voicemailAudioMediaId: z.string().default(''),
   closedVoicemailAudioMediaId: z.string().default(''),
@@ -86,6 +93,31 @@ export async function PUT(request: NextRequest) {
     return errorResponse('Opening hours must be a time like 09:00 for each day')
   }
 
+  const holidayDates = parseHolidayDates(parsed.data.holidayDates)
+  if (!holidayDates) {
+    return errorResponse('Holiday dates must be real calendar dates')
+  }
+
+  const anonymousCallers = parsed.data.anonymousCallers
+  if (!isAnonymousCallerMode(anonymousCallers)) {
+    return errorResponse('Unknown withheld-number option')
+  }
+
+  const missedCallSmsMessage = parsed.data.missedCallSmsMessage.trim()
+  const { missedCallSmsEnabled, transcribeVoicemail } = parsed.data
+
+  // Same rule as forwardTo: a second number must be dialable to be worth
+  // saving, but an invalid leftover with the field effectively off is dropped
+  // rather than blocking the save.
+  let forwardToSecond = ''
+  if (parsed.data.forwardToSecond.trim()) {
+    const normalised = normalisePhone(parsed.data.forwardToSecond)
+    if (!normalised) {
+      return errorResponse('The second forward-to number must be in international format, e.g. +447700900123')
+    }
+    forwardToSecond = normalised
+  }
+
   const { greetingAudioMediaId, voicemailAudioMediaId, closedVoicemailAudioMediaId } = parsed.data
   const audioProblem = await audioIdsProblem([
     greetingAudioMediaId,
@@ -123,6 +155,7 @@ export async function PUT(request: NextRequest) {
       phoneSid,
       phoneNumber,
       forwardTo,
+      forwardToSecond,
       enabled,
       greetingMessage,
       greetingVoice,
@@ -134,6 +167,11 @@ export async function PUT(request: NextRequest) {
       closedVoicemailGreeting,
       voicemailVoice,
       businessHours,
+      holidayDates,
+      missedCallSmsEnabled,
+      missedCallSmsMessage,
+      transcribeVoicemail,
+      anonymousCallers,
       greetingAudioMediaId,
       voicemailAudioMediaId,
       closedVoicemailAudioMediaId,

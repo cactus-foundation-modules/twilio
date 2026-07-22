@@ -69,6 +69,31 @@ export function defaultBusinessHours(): BusinessHours {
   }))
 }
 
+// One-off closed dates on top of the weekly schedule - bank holidays and the
+// like, which the weekly grid cannot express. Stored as a JSON array of
+// "YYYY-MM-DD" strings, matched against the calendar date in the site timezone.
+export type HolidayDates = string[]
+
+const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
+export function isValidHolidayDate(value: string): boolean {
+  return DATE_RE.test(value)
+}
+
+// Same contract as parseBusinessHours: null on anything malformed so a save is
+// rejected rather than stored rubbish mis-routing calls later. Dates come back
+// sorted and deduplicated so the admin list reads sensibly whatever order they
+// were added in.
+export function parseHolidayDates(value: unknown): HolidayDates | null {
+  if (!Array.isArray(value)) return null
+  const dates = new Set<string>()
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !isValidHolidayDate(entry)) return null
+    dates.add(entry)
+  }
+  return [...dates].sort()
+}
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // Weekday and minute-of-day as they read on a clock in `timezone`. An unknown
@@ -98,6 +123,24 @@ function clockIn(timezone: string, at: Date): { weekday: number; minutes: number
   const weekday = WEEKDAYS.indexOf(get('weekday'))
   const minutes = Number(get('hour')) * 60 + Number(get('minute'))
   return { weekday: weekday === -1 ? 0 : weekday, minutes }
+}
+
+// The calendar date ("YYYY-MM-DD") as it reads in `timezone`, with the same
+// UTC fallback as clockIn: a wrong date is recoverable, a webhook 500 is not.
+function dateIn(timezone: string, at: Date): string {
+  try {
+    // en-CA formats as YYYY-MM-DD directly.
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(at)
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(at)
+  }
+}
+
+// Is `at` on one of the one-off holiday dates? Evaluated on the calendar date
+// alone - a holiday closes the whole day, opening hours or not.
+export function isHolidayOn(holidays: HolidayDates, timezone: string, at: Date): boolean {
+  if (holidays.length === 0) return false
+  return holidays.includes(dateIn(timezone, at))
 }
 
 // Is `at` inside the schedule? Windows where close is earlier than open run

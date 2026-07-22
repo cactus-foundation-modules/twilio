@@ -24,6 +24,8 @@ type CallLogEntry = {
   recordingSids: string[]
   /** The recordingSids that are voicemail messages rather than recorded calls. */
   voicemailSids: string[]
+  /** Twilio's typed-up voicemail text, per recording SID, where one was asked for. */
+  transcriptions: Record<string, { status: string; text: string }>
 }
 
 type MessageLogEntry = {
@@ -258,6 +260,23 @@ function CallLogCard({ calls, loading, error, phoneNumber }: { calls: CallLogEnt
                               </button>
                             )}
                             {c.voicemailSids.includes(sid) && <VoicemailBadge />}
+                            {c.transcriptions?.[sid] && (
+                              <p
+                                style={{
+                                  flexBasis: '100%',
+                                  margin: 0,
+                                  fontSize: 'var(--text-sm)',
+                                  color: 'var(--color-text-muted)',
+                                  maxWidth: '28rem',
+                                }}
+                              >
+                                {c.transcriptions[sid].status === 'completed'
+                                  ? <>&ldquo;{c.transcriptions[sid].text}&rdquo;</>
+                                  : c.transcriptions[sid].status === 'pending'
+                                    ? 'Transcription on its way…'
+                                    : 'Twilio could not make out this message.'}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>

@@ -214,7 +214,31 @@ async function twilioFetch(
   )
 
   if (!res.ok) throw await twilioError(res, region, host)
+  // DELETE answers 204 with no body.
+  if (res.status === 204) return null
   return res.json()
+}
+
+// Connection test against explicit credentials - the settings tab's "Test
+// connection" button, which checks what the admin has TYPED (falling back to
+// the saved values) before anything is saved or deployed. Deliberately does not
+// read the env, so a typo is caught while the correct value is still on the
+// clipboard.
+export async function testCredentials(
+  region: TwilioRegion,
+  accountSid: string,
+  authToken: string
+): Promise<string> {
+  const sidProblem = accountSidProblem(accountSid)
+  if (sidProblem) throw new Error(sidProblem)
+  const host = regionHost('api', region)
+  const res = await fetch(`https://${host}/2010-04-01/Accounts/${accountSid}.json`, {
+    headers: { Authorization: authHeader(accountSid, authToken) },
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!res.ok) throw await twilioError(res, region, host)
+  const data = (await res.json()) as { friendly_name?: string }
+  return data.friendly_name ?? 'Twilio account'
 }
 
 // Connection test - fetches the account's friendly name from one Region. Also
@@ -505,6 +529,35 @@ export async function fetchRecordingAudio(
       signal: AbortSignal.timeout(30_000),
     }
   )
+}
+
+// Recording SIDs in one Region created on or before `cutoff`'s calendar date -
+// the retention sweep's shopping list. One page per call: the sweep runs daily,
+// so a backlog bigger than a page drains over successive nights rather than
+// holding the cron open.
+export async function listRecordingSidsBefore(
+  cutoff: Date,
+  region: TwilioRegion = getHomeRegion()
+): Promise<string[]> {
+  const date = cutoff.toISOString().slice(0, 10)
+  const data = await twilioFetch(
+    `/Recordings.json?PageSize=400&${encodeURIComponent('DateCreated<')}=${date}`,
+    { region }
+  ) as { recordings?: Array<{ sid: string }> }
+  return (data.recordings ?? []).map((r) => r.sid)
+}
+
+// Deletes one recording from the Twilio account. Gone is gone - Twilio keeps
+// no bin - so the only caller is the retention sweep, after the admin set a
+// keep-for period. A recording lives in the Region its call was processed in.
+export async function deleteRecording(
+  recordingSid: string,
+  region: TwilioRegion = getHomeRegion()
+): Promise<void> {
+  await twilioFetch(`/Recordings/${encodeURIComponent(recordingSid)}.json`, {
+    method: 'DELETE',
+    region,
+  })
 }
 
 // Escapes text for embedding in TwiML (e.g. inside <Say>).
