@@ -22,6 +22,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSiteUrl } from '@/lib/config/env'
 import { validateTwilioSignature, isTwilioConfigured } from '@/modules/twilio/lib/twilio'
 import { getRuleForNumber } from '@/modules/twilio/lib/forwarding'
+import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
+import { voiceForRegion } from '@/modules/twilio/lib/voices'
 import { planVoicemailRequest, voicemailTwiml } from '@/modules/twilio/lib/voicemail'
 import { recordVoicemail } from '@/modules/twilio/lib/voicemail-log'
 
@@ -82,6 +84,9 @@ export async function POST(request: NextRequest) {
     // The rule could have had voicemail switched off mid-call. Hanging up beats
     // recording a message nobody has anywhere to listen to.
     if (!rule?.voicemailEnabled) return twiml('<Hangup/>')
+    // Same Region-availability swap as the voice webhook: a us-only voice on a
+    // non-US call is error 13520, not a greeting.
+    rule.voicemailVoice = voiceForRegion(rule.voicemailVoice, await resolveNumberRegion(called))
     // Always the open-hours greeting, never the closed one: getting here means
     // the voice webhook dialled out, which it only does inside opening hours.
     // The caller heard the phone ring and nobody picked up, so "we're closed"

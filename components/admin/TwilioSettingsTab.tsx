@@ -213,12 +213,35 @@ export function TwilioSettingsTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
       <div className="card">
         <h2 className="card-title">Twilio</h2>
-        <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-3)' }}>
           Connect your Twilio account to manage call forwarding and send sign-in codes by text
-          message. Everything you need is on the <strong>API keys &amp; tokens</strong> page of
-          the Twilio console: the Account SID (starts with AC, same in every region) at the top,
-          and a <strong>Primary auth token</strong> per region under Auth tokens. API keys
-          (SIDs starting with SK) won&apos;t work here.
+          message. Setting up takes two values from the Twilio console:
+        </p>
+        <ol style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-3)', paddingLeft: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          <li>
+            <strong>Pick your account&apos;s country</strong> below first. It&apos;s the country
+            shown in the region switcher at the top of the Twilio console - not where you are,
+            and not where your phone numbers are.
+          </li>
+          <li>
+            In the Twilio console, open <strong>Account &rarr; API keys &amp; tokens</strong>.
+            Copy the <strong>Account SID</strong> from the top of the page (it starts with AC and
+            is the same everywhere) and paste it below.
+          </li>
+          <li>
+            On that same page, under <strong>Auth tokens</strong>, copy the{' '}
+            <strong>Primary auth token</strong> and paste it below. Check the page&apos;s region
+            dropdown shows the same country as step 1 - each country issues its own token, and
+            they don&apos;t work anywhere else.
+          </li>
+          <li>
+            <strong>Save.</strong> The details take effect after the next deployment, then your
+            phone numbers appear below.
+          </li>
+        </ol>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
+          Mind the lookalikes: API keys (starting SK) are a different thing and won&apos;t work
+          here - it&apos;s the Account SID and auth token or nothing.
         </p>
 
         {error && <div className="alert alert-danger">{error}</div>}

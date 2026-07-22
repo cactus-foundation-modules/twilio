@@ -10,7 +10,7 @@ import { errorResponse } from '@/lib/utils'
 import { isTwilioConfigured, placeCall, escapeXml } from '@/modules/twilio/lib/twilio'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
-import { isValidVoice } from '@/modules/twilio/lib/voices'
+import { isValidVoice, voiceForRegion } from '@/modules/twilio/lib/voices'
 
 const Body = z.object({
   // The Twilio number the preview call comes from (the row being configured).
@@ -41,16 +41,17 @@ export async function POST(request: NextRequest) {
   const greetingMessage = parsed.data.greetingMessage.trim()
   if (!greetingMessage) return errorResponse('Write a greeting first')
 
-  const greetingVoice = parsed.data.greetingVoice
-  if (!isValidVoice(greetingVoice)) return errorResponse('Unknown greeting voice')
-
-  const voiceAttr = greetingVoice ? ` voice="${greetingVoice}"` : ''
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say${voiceAttr}>${escapeXml(greetingMessage)}</Say></Response>`
+  if (!isValidVoice(parsed.data.greetingVoice)) return errorResponse('Unknown greeting voice')
 
   try {
     // The preview goes out through the row's own Region, so what the admin
-    // hears is routed exactly like a real call to that number.
+    // hears is routed exactly like a real call to that number - including the
+    // same voice swap the live webhook makes when a us-only voice is asked for
+    // on a non-US number (voices.ts, usOnly).
     const region = await resolveNumberRegion(parsed.data.phoneNumber)
+    const greetingVoice = voiceForRegion(parsed.data.greetingVoice, region)
+    const voiceAttr = greetingVoice ? ` voice="${greetingVoice}"` : ''
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say${voiceAttr}>${escapeXml(greetingMessage)}</Say></Response>`
     await placeCall(to, parsed.data.phoneNumber, twiml, region)
     return NextResponse.json({ ok: true })
   } catch (err) {

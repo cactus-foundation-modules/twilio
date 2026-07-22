@@ -3,6 +3,7 @@
 // off, or outside opening hours) and when the forwarded number failed to pick up.
 import { getSiteUrl } from '@/lib/config/env'
 import { escapeXml } from './twilio'
+import { greetingAudioUrl } from './greeting-audio'
 import type { ForwardingRule } from './forwarding'
 
 // How long a caller may talk before Twilio stops the recording. Not
@@ -103,17 +104,47 @@ export function planVoicemailRequest(req: VoicemailRequest): VoicemailPlan {
   return { action: 'hangup' }
 }
 
-// The <Say> + <Record> pair. Voice ids are validated against the curated list
-// on save and only ever contain [A-Za-z.-], so they need no escaping; the
+// The greeting element ahead of the <Record>: an uploaded audio file plays
+// (<Play>), otherwise the text is said (<Say>). A `closed` call prefers the
+// closed-hours pair, falling back to the usual one exactly as the words always
+// have: closed audio, then closed words, then the everyday audio, then the
+// everyday words (or the stock line).
+export function voicemailGreetingTwiml(
+  rule: Pick<
+    ForwardingRule,
+    'voicemailGreeting' | 'closedVoicemailGreeting' | 'voicemailVoice' |
+    'voicemailAudioMediaId' | 'closedVoicemailAudioMediaId'
+  >,
+  closed = false
+): string {
+  const audioId =
+    closed && rule.closedVoicemailAudioMediaId
+      ? rule.closedVoicemailAudioMediaId
+      : // A closed call with closed WORDS set keeps saying them - the admin
+        // wrote something specifically for out-of-hours callers, and the
+        // everyday audio file is not that.
+        closed && rule.closedVoicemailGreeting.trim()
+        ? ''
+        : rule.voicemailAudioMediaId
+  if (audioId) return `<Play>${escapeXml(greetingAudioUrl(audioId))}</Play>`
+  const voiceAttr = rule.voicemailVoice ? ` voice="${rule.voicemailVoice}"` : ''
+  return `<Say${voiceAttr}>${escapeXml(voicemailGreetingFor(rule, closed))}</Say>`
+}
+
+// The greeting + <Record> pair. Voice ids are validated against the curated
+// list on save and only ever contain [A-Za-z.-], so they need no escaping; the
 // greeting is caller-visible free text and does. `closed` says whether the call
 // arrived outside the number's opening hours, which only changes the words: the
 // voice and the recording behaviour are the same either way.
 export function voicemailTwiml(
-  rule: Pick<ForwardingRule, 'voicemailGreeting' | 'closedVoicemailGreeting' | 'voicemailVoice'>,
+  rule: Pick<
+    ForwardingRule,
+    'voicemailGreeting' | 'closedVoicemailGreeting' | 'voicemailVoice' |
+    'voicemailAudioMediaId' | 'closedVoicemailAudioMediaId'
+  >,
   closed = false
 ): string {
-  const voiceAttr = rule.voicemailVoice ? ` voice="${rule.voicemailVoice}"` : ''
-  const say = `<Say${voiceAttr}>${escapeXml(voicemailGreetingFor(rule, closed))}</Say>`
+  const say = voicemailGreetingTwiml(rule, closed)
   // An explicit action is important: left to itself <Record> re-requests the
   // current document's URL when the recording ends, which would read as a fresh
   // call and loop. The action lands back on the voicemail route, which sees the

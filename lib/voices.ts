@@ -7,6 +7,17 @@ export type TwilioVoice = {
   id: string
   label: string
   group: string
+  /**
+   * Only synthesises for calls processed in Twilio's US (us1) Region. The
+   * Generative voices are Public Beta and not yet available in ie1/au1: a
+   * number processed in Ireland that asks for one gets Twilio error 13520
+   * "Say: Invalid text" and the call dies after the greeting line (seen live
+   * on an ie1 number, 2026-07-21). Render paths swap these for
+   * `regionalFallback` on non-us1 calls instead of killing the call.
+   */
+  usOnly?: boolean
+  /** Said instead when a usOnly voice is asked for outside us1. */
+  regionalFallback?: string
 }
 
 export const TWILIO_VOICES: TwilioVoice[] = [
@@ -34,12 +45,33 @@ export const TWILIO_VOICES: TwilioVoice[] = [
   { id: 'Polly.Matthew-Neural', label: 'Matthew - American English, male', group: 'Neural (more natural)' },
   { id: 'Polly.Olivia-Neural', label: 'Olivia - Australian English, female', group: 'Neural (more natural)' },
 
-  // Amazon Polly generative voices - most human-like, highest cost.
-  { id: 'Polly.Amy-Generative', label: 'Amy - British English, female', group: 'Generative (most natural)' },
-  { id: 'Polly.Joanna-Generative', label: 'Joanna - American English, female', group: 'Generative (most natural)' },
-  { id: 'Polly.Matthew-Generative', label: 'Matthew - American English, male', group: 'Generative (most natural)' },
+  // Amazon Polly generative voices - most human-like, highest cost. US-handled
+  // calls only (see usOnly above); elsewhere the Neural sibling is said instead.
+  { id: 'Polly.Amy-Generative', label: 'Amy - British English, female', group: 'Generative (most natural)', usOnly: true, regionalFallback: 'Polly.Amy-Neural' },
+  { id: 'Polly.Joanna-Generative', label: 'Joanna - American English, female', group: 'Generative (most natural)', usOnly: true, regionalFallback: 'Polly.Joanna-Neural' },
+  { id: 'Polly.Matthew-Generative', label: 'Matthew - American English, male', group: 'Generative (most natural)', usOnly: true, regionalFallback: 'Polly.Matthew-Neural' },
 ]
 
 export function isValidVoice(id: string): boolean {
   return TWILIO_VOICES.some((v) => v.id === id)
+}
+
+// Whether a voice can actually be said on a call processed in `region`.
+// Unknown ids read as available - they were validated on save, and the render
+// paths must never invent a reason to change what the admin chose.
+export function voiceAvailableInRegion(id: string, region: string): boolean {
+  if (region === 'us1') return true
+  const voice = TWILIO_VOICES.find((v) => v.id === id)
+  return !voice?.usOnly
+}
+
+// The voice to actually put on the <Say> for a call processed in `region`:
+// the chosen one where it works, its regional fallback where it does not, and
+// the Twilio default ('') as the last resort. Keeping the call alive beats
+// honouring the exact voice - a us-only voice on an Irish call is Twilio error
+// 13520 and a dead line.
+export function voiceForRegion(id: string, region: string): string {
+  if (voiceAvailableInRegion(id, region)) return id
+  const fallback = TWILIO_VOICES.find((v) => v.id === id)?.regionalFallback ?? ''
+  return voiceAvailableInRegion(fallback, region) ? fallback : ''
 }

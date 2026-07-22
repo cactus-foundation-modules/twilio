@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     -- hours. Empty means there is nothing special to say, so the usual
     -- voicemail greeting is used. See migration 006.
     "closed_voicemail_greeting" TEXT NOT NULL DEFAULT '',
+    -- Uploaded audio (core media library ids, files in the root "twilio"
+    -- folder) played with <Play> instead of the <Say> text/voice pair when
+    -- set. Empty = no file, text-to-speech as usual. See migration 007.
+    "greeting_audio_media_id"         TEXT NOT NULL DEFAULT '',
+    "voicemail_audio_media_id"        TEXT NOT NULL DEFAULT '',
+    "closed_voicemail_audio_media_id" TEXT NOT NULL DEFAULT '',
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")

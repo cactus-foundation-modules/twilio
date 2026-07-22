@@ -20,6 +20,13 @@ export type ForwardingRule = {
   voicemailVoice: string
   /** Empty array means no schedule: the number is available at any hour. */
   businessHours: BusinessHours
+  /**
+   * Core media library ids of uploaded audio, played with <Play> instead of
+   * the corresponding <Say> text/voice when set. Empty = no file.
+   */
+  greetingAudioMediaId: string
+  voicemailAudioMediaId: string
+  closedVoicemailAudioMediaId: string
 }
 
 function mapRow(r: Record<string, unknown>): ForwardingRule {
@@ -42,6 +49,9 @@ function mapRow(r: Record<string, unknown>): ForwardingRule {
     // schedule reads as "no schedule" rather than throwing on an inbound call -
     // the number staying reachable is the safer way to be wrong.
     businessHours: parseBusinessHours(r.business_hours) ?? [],
+    greetingAudioMediaId: r.greeting_audio_media_id as string,
+    voicemailAudioMediaId: r.voicemail_audio_media_id as string,
+    closedVoicemailAudioMediaId: r.closed_voicemail_audio_media_id as string,
   }
 }
 
@@ -50,7 +60,9 @@ export async function getForwardingRules(): Promise<ForwardingRule[]> {
     SELECT id, phone_sid, phone_number, forward_to, enabled,
            greeting_message, greeting_voice, record_calls, show_called_number,
            voicemail_enabled, ring_timeout, voicemail_greeting,
-           closed_voicemail_greeting, voicemail_voice, business_hours
+           closed_voicemail_greeting, voicemail_voice, business_hours,
+           greeting_audio_media_id, voicemail_audio_media_id,
+           closed_voicemail_audio_media_id
     FROM "tw_forwarding_rules"
   `
   return rows.map(mapRow)
@@ -64,7 +76,9 @@ export async function getRuleForNumber(phoneNumber: string): Promise<ForwardingR
     SELECT id, phone_sid, phone_number, forward_to, enabled,
            greeting_message, greeting_voice, record_calls, show_called_number,
            voicemail_enabled, ring_timeout, voicemail_greeting,
-           closed_voicemail_greeting, voicemail_voice, business_hours
+           closed_voicemail_greeting, voicemail_voice, business_hours,
+           greeting_audio_media_id, voicemail_audio_media_id,
+           closed_voicemail_audio_media_id
     FROM "tw_forwarding_rules"
     WHERE phone_number = ${phoneNumber}
     LIMIT 1
@@ -104,6 +118,9 @@ export async function upsertForwardingRule(input: {
   closedVoicemailGreeting: string
   voicemailVoice: string
   businessHours: BusinessHours
+  greetingAudioMediaId: string
+  voicemailAudioMediaId: string
+  closedVoicemailAudioMediaId: string
 }): Promise<void> {
   // Sent as a JSON string and cast, so the jsonb column gets a JSON document
   // rather than Postgres trying to read the array as a text[].
@@ -113,12 +130,15 @@ export async function upsertForwardingRule(input: {
       (phone_sid, phone_number, forward_to, enabled, greeting_message, greeting_voice,
        record_calls, show_called_number, voicemail_enabled, ring_timeout,
        voicemail_greeting, closed_voicemail_greeting, voicemail_voice,
-       business_hours, updated_at)
+       business_hours, greeting_audio_media_id, voicemail_audio_media_id,
+       closed_voicemail_audio_media_id, updated_at)
     VALUES (${input.phoneSid}, ${input.phoneNumber}, ${input.forwardTo}, ${input.enabled},
             ${input.greetingMessage}, ${input.greetingVoice}, ${input.recordCalls},
             ${input.showCalledNumber}, ${input.voicemailEnabled}, ${input.ringTimeout},
             ${input.voicemailGreeting}, ${input.closedVoicemailGreeting},
-            ${input.voicemailVoice}, ${businessHours}::jsonb, CURRENT_TIMESTAMP)
+            ${input.voicemailVoice}, ${businessHours}::jsonb,
+            ${input.greetingAudioMediaId}, ${input.voicemailAudioMediaId},
+            ${input.closedVoicemailAudioMediaId}, CURRENT_TIMESTAMP)
     ON CONFLICT (phone_sid) DO UPDATE SET
       phone_number       = EXCLUDED.phone_number,
       forward_to         = EXCLUDED.forward_to,
@@ -133,6 +153,9 @@ export async function upsertForwardingRule(input: {
       closed_voicemail_greeting = EXCLUDED.closed_voicemail_greeting,
       voicemail_voice    = EXCLUDED.voicemail_voice,
       business_hours     = EXCLUDED.business_hours,
+      greeting_audio_media_id         = EXCLUDED.greeting_audio_media_id,
+      voicemail_audio_media_id        = EXCLUDED.voicemail_audio_media_id,
+      closed_voicemail_audio_media_id = EXCLUDED.closed_voicemail_audio_media_id,
       updated_at         = CURRENT_TIMESTAMP
   `
 }

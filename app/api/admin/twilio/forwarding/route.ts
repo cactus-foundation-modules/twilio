@@ -12,6 +12,7 @@ import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 import { isValidVoice } from '@/modules/twilio/lib/voices'
 import { parseBusinessHours, MIN_RING_TIMEOUT, MAX_RING_TIMEOUT } from '@/modules/twilio/lib/business-hours'
+import { prisma } from '@/lib/db/prisma'
 
 const Body = z.object({
   phoneSid: z.string().min(1),
@@ -28,7 +29,31 @@ const Body = z.object({
   closedVoicemailGreeting: z.string().max(500).default(''),
   voicemailVoice: z.string().default(''),
   businessHours: z.array(z.unknown()).default([]),
+  greetingAudioMediaId: z.string().default(''),
+  voicemailAudioMediaId: z.string().default(''),
+  closedVoicemailAudioMediaId: z.string().default(''),
 })
+
+// A rule may only reference media that is genuinely an uploaded audio file -
+// these ids are what the public audio route agrees to serve, so an arbitrary
+// media id here would quietly publish that file to anyone with the URL.
+async function audioIdsProblem(ids: string[]): Promise<string | null> {
+  const wanted = [...new Set(ids.filter(Boolean))]
+  if (wanted.length === 0) return null
+  const rows = await prisma.media.findMany({
+    where: { id: { in: wanted } },
+    select: { id: true, mimeType: true },
+  })
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  for (const id of wanted) {
+    const media = byId.get(id)
+    if (!media) return 'That greeting audio file no longer exists - upload it again.'
+    if (!media.mimeType.startsWith('audio/')) {
+      return 'Greeting audio must be an audio file uploaded through this page.'
+    }
+  }
+  return null
+}
 
 export async function PUT(request: NextRequest) {
   const user = await getSessionFromCookie()
@@ -60,6 +85,14 @@ export async function PUT(request: NextRequest) {
   if (!businessHours) {
     return errorResponse('Opening hours must be a time like 09:00 for each day')
   }
+
+  const { greetingAudioMediaId, voicemailAudioMediaId, closedVoicemailAudioMediaId } = parsed.data
+  const audioProblem = await audioIdsProblem([
+    greetingAudioMediaId,
+    voicemailAudioMediaId,
+    closedVoicemailAudioMediaId,
+  ])
+  if (audioProblem) return errorResponse(audioProblem)
 
   let forwardTo = ''
   if (enabled) {
@@ -101,6 +134,9 @@ export async function PUT(request: NextRequest) {
       closedVoicemailGreeting,
       voicemailVoice,
       businessHours,
+      greetingAudioMediaId,
+      voicemailAudioMediaId,
+      closedVoicemailAudioMediaId,
     })
     return NextResponse.json({ ok: true })
   } catch (err) {

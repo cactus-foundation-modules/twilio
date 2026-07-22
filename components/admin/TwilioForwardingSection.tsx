@@ -4,7 +4,7 @@
 // Lives on the core admin settings page (Twilio tab); the main Twilio admin
 // page now holds the call and message logs instead.
 import { useEffect, useState } from 'react'
-import { TWILIO_VOICES } from '@/modules/twilio/lib/voices'
+import { TWILIO_VOICES, voiceAvailableInRegion, voiceForRegion } from '@/modules/twilio/lib/voices'
 import {
   defaultBusinessHours,
   MIN_RING_TIMEOUT,
@@ -12,11 +12,21 @@ import {
   type BusinessHours,
 } from '@/modules/twilio/lib/business-hours'
 
+// An uploaded greeting audio file on a rule. `pending` marks one uploaded in
+// this session but not yet saved onto the rule - the public audio route only
+// serves ids a saved rule references, so the inline player waits for the save.
+type AudioValue = { id: string; name: string | null; pending?: boolean } | null
+
 type NumberRow = {
   sid: string
   phoneNumber: string
   friendlyName: string
   voiceUrl: string
+  /** The Twilio Region this number's calls are processed in; null = unknown. */
+  region: string | null
+  greetingAudio: AudioValue
+  voicemailAudio: AudioValue
+  closedVoicemailAudio: AudioValue
   forwardTo: string
   forwardingEnabled: boolean
   greetingMessage: string
@@ -37,23 +47,148 @@ const VOICE_GROUPS = [...new Set(TWILIO_VOICES.map((v) => v.group))]
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-function VoicePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// Voice choices, constrained by where the number's calls are processed: some
+// voices only exist for US-handled calls (voices.ts, usOnly), so on a number
+// handled elsewhere those options are disabled and say so. A saved voice that
+// is no longer sayable gets an honest note underneath naming the voice callers
+// will actually hear - the webhook swaps it at call time rather than letting
+// the call die. An unknown region (null) disables nothing.
+function VoicePicker({
+  value,
+  region,
+  onChange,
+}: {
+  value: string
+  region: string | null
+  onChange: (v: string) => void
+}) {
+  const unavailable = (id: string) => region !== null && !voiceAvailableInRegion(id, region)
+  const substitute = region !== null && unavailable(value) ? voiceForRegion(value, region) : null
+  const substituteLabel =
+    substitute !== null
+      ? TWILIO_VOICES.find((v) => v.id === substitute)?.label ?? 'the standard voice'
+      : null
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
-      {VOICE_GROUPS.map((group) =>
-        group === 'Default' ? (
-          TWILIO_VOICES.filter((v) => v.group === group).map((v) => (
-            <option key={v.id} value={v.id}>{v.label}</option>
-          ))
-        ) : (
-          <optgroup key={group} label={group}>
-            {TWILIO_VOICES.filter((v) => v.group === group).map((v) => (
+    <>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {VOICE_GROUPS.map((group) =>
+          group === 'Default' ? (
+            TWILIO_VOICES.filter((v) => v.group === group).map((v) => (
               <option key={v.id} value={v.id}>{v.label}</option>
-            ))}
-          </optgroup>
-        )
+            ))
+          ) : (
+            <optgroup key={group} label={group}>
+              {TWILIO_VOICES.filter((v) => v.group === group).map((v) => (
+                <option key={v.id} value={v.id} disabled={unavailable(v.id) && v.id !== value}>
+                  {v.label}{unavailable(v.id) ? ' - United States numbers only' : ''}
+                </option>
+              ))}
+            </optgroup>
+          )
+        )}
+      </select>
+      {substituteLabel && (
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+          This voice only works on numbers handled in the United States, so callers to this
+          number will hear {substituteLabel} instead. Pick a different voice to choose for
+          yourself.
+        </p>
       )}
-    </select>
+    </>
+  )
+}
+
+const AUDIO_ACCEPT = 'audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,.mp3,.wav'
+
+// Upload-or-show control for one greeting slot's audio file. With no file, a
+// picker that uploads on choose (MP3/WAV, filed in the media library's twilio
+// folder); with one, its name, a player (once saved - see AudioValue.pending)
+// and a Remove button. The greeting text/voice stay editable underneath but
+// the audio wins on a real call, and the caption says so.
+function GreetingAudioControl({
+  label,
+  value,
+  disabled,
+  onChange,
+  onError,
+}: {
+  label: string
+  value: AudioValue
+  disabled: boolean
+  onChange: (v: AudioValue) => void
+  onError: (message: string) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+
+  async function upload(file: File) {
+    setUploading(true)
+    onError('')
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const res = await fetch('/api/m/twilio/admin/greeting-audio', { method: 'POST', body })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error ?? 'Failed to upload the audio file')
+      onChange({ id: d.mediaId, name: d.name, pending: true })
+    } catch (err: unknown) {
+      onError(err instanceof Error ? err.message : 'Failed to upload the audio file')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="field" style={{ margin: 0, flex: '1 1 16rem' }}>
+      <label>{label}</label>
+      {value ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text)' }}>
+            {value.name ?? 'audio file'}
+          </span>
+          {value.pending ? (
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+              uploaded - press Save to put it live
+            </span>
+          ) : (
+            <audio
+              controls
+              preload="none"
+              src={`/api/m/twilio/public/audio/${encodeURIComponent(value.id)}`}
+              style={{ height: '2rem', maxWidth: '14rem' }}
+            />
+          )}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={disabled}
+            onClick={() => onChange(null)}
+          >
+            Remove
+          </button>
+        </div>
+      ) : (
+        <input
+          type="file"
+          accept={AUDIO_ACCEPT}
+          disabled={disabled || uploading}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (file) void upload(file)
+          }}
+        />
+      )}
+      {value && (
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+          Callers hear this recording instead of the typed message and voice.
+        </p>
+      )}
+      {uploading && (
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+          Uploading…
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -110,11 +245,22 @@ export function TwilioForwardingSection() {
           closedVoicemailGreeting: row.closedVoicemailGreeting,
           voicemailVoice: row.voicemailVoice,
           businessHours: row.businessHours,
+          greetingAudioMediaId: row.greetingAudio?.id ?? '',
+          voicemailAudioMediaId: row.voicemailAudio?.id ?? '',
+          closedVoicemailAudioMediaId: row.closedVoicemailAudio?.id ?? '',
         }),
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error ?? 'Failed to save')
       setSavedSid(row.sid)
+      // Saved audio is now served by the public route, so the inline players
+      // can appear.
+      const settled = (v: AudioValue): AudioValue => (v ? { ...v, pending: false } : null)
+      updateRow(row.sid, {
+        greetingAudio: settled(row.greetingAudio),
+        voicemailAudio: settled(row.voicemailAudio),
+        closedVoicemailAudio: settled(row.closedVoicemailAudio),
+      })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
@@ -162,7 +308,11 @@ export function TwilioForwardingSection() {
       <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
         Choose where each of your Twilio numbers forwards incoming calls, and what happens when
         nobody picks up. With forwarding and voicemail both off, the number reverts to whatever
-        it did before.
+        it did before. Saving here wires the number up at Twilio automatically - there&apos;s
+        nothing to configure in the Twilio console. If you do go looking there, flip the
+        console&apos;s region switcher (top right) to the same country the number is handled in:
+        each country keeps its own copy of a number&apos;s call settings, so the wrong
+        country&apos;s page just looks empty.
       </p>
 
       {error && <div className="alert alert-danger">{error}</div>}
@@ -226,9 +376,17 @@ export function TwilioForwardingSection() {
                   <label>Greeting voice</label>
                   <VoicePicker
                     value={row.greetingVoice}
+                    region={row.region}
                     onChange={(v) => updateRow(row.sid, { greetingVoice: v })}
                   />
                 </div>
+                <GreetingAudioControl
+                  label="Or upload a recording (MP3 or WAV)"
+                  value={row.greetingAudio}
+                  disabled={savingSid === row.sid}
+                  onChange={(v) => updateRow(row.sid, { greetingAudio: v })}
+                  onError={setError}
+                />
                 <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', color: 'var(--color-text)', paddingBottom: 'var(--space-2)' }}>
                   <input
                     type="checkbox"
@@ -253,7 +411,7 @@ export function TwilioForwardingSection() {
                   actually rang until you answer.
                 </p>
               )}
-              {row.greetingMessage.trim() && (
+              {row.greetingMessage.trim() && !row.greetingAudio && (
                 <div style={{ flexBasis: '100%', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)' }}>
                   <div className="field" style={{ margin: 0, flex: '1 1 14rem' }}>
                     <label>Hear it first - we ring you and read it out</label>
@@ -339,10 +497,18 @@ export function TwilioForwardingSection() {
                       <label>Voicemail voice</label>
                       <VoicePicker
                         value={row.voicemailVoice}
+                        region={row.region}
                         onChange={(v) => updateRow(row.sid, { voicemailVoice: v })}
                       />
                     </div>
-                    {row.voicemailGreeting.trim() && (
+                    <GreetingAudioControl
+                      label="Or upload a recording (MP3 or WAV)"
+                      value={row.voicemailAudio}
+                      disabled={savingSid === row.sid}
+                      onChange={(v) => updateRow(row.sid, { voicemailAudio: v })}
+                      onError={setError}
+                    />
+                    {row.voicemailGreeting.trim() && !row.voicemailAudio && (
                       <button
                         className="btn btn-secondary"
                         disabled={previewingSid === `${row.sid}:voicemail` || !previewTo}
@@ -456,7 +622,14 @@ export function TwilioForwardingSection() {
                             onChange={(e) => updateRow(row.sid, { closedVoicemailGreeting: e.target.value })}
                           />
                         </div>
-                        {row.closedVoicemailGreeting.trim() && (
+                        <GreetingAudioControl
+                          label="Or upload a recording (MP3 or WAV)"
+                          value={row.closedVoicemailAudio}
+                          disabled={savingSid === row.sid}
+                          onChange={(v) => updateRow(row.sid, { closedVoicemailAudio: v })}
+                          onError={setError}
+                        />
+                        {row.closedVoicemailGreeting.trim() && !row.closedVoicemailAudio && (
                           <button
                             className="btn btn-secondary"
                             disabled={previewingSid === `${row.sid}:closed` || !previewTo}

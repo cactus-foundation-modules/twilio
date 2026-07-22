@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import {
   planVoicemailRequest,
   recordingSidFromUrl,
   voicemailGreetingFor,
+  voicemailGreetingTwiml,
   MIN_VOICEMAIL_SECONDS,
 } from './voicemail'
 
@@ -133,6 +134,54 @@ describe('voicemailGreetingFor', () => {
     expect(voicemailGreetingFor({ voicemailGreeting: '', closedVoicemailGreeting: '  We are shut.  ' }, true)).toBe(
       'We are shut.'
     )
+  })
+})
+
+describe('voicemailGreetingTwiml', () => {
+  // greetingAudioUrl builds on getSiteUrl, which throws without SITE_URL - the
+  // rest of this suite is env-free, so it is pinned here rather than globally.
+  beforeAll(() => {
+    process.env.SITE_URL = 'https://example.test'
+  })
+
+  const rule = {
+    voicemailGreeting: 'Nobody is free right now.',
+    closedVoicemailGreeting: 'We are shut.',
+    voicemailVoice: 'Polly.Amy',
+    voicemailAudioMediaId: '',
+    closedVoicemailAudioMediaId: '',
+  }
+
+  it('says the greeting when no audio is uploaded', () => {
+    expect(voicemailGreetingTwiml(rule, false)).toBe('<Say voice="Polly.Amy">Nobody is free right now.</Say>')
+  })
+
+  it('plays the uploaded audio instead of saying anything', () => {
+    const twiml = voicemailGreetingTwiml({ ...rule, voicemailAudioMediaId: 'media123' }, false)
+    expect(twiml).toMatch(/^<Play>.*\/api\/m\/twilio\/public\/audio\/media123<\/Play>$/)
+  })
+
+  it('prefers the closed audio on a closed call', () => {
+    const twiml = voicemailGreetingTwiml(
+      { ...rule, voicemailAudioMediaId: 'media123', closedVoicemailAudioMediaId: 'closed456' },
+      true
+    )
+    expect(twiml).toContain('/api/m/twilio/public/audio/closed456')
+  })
+
+  // Closed words written specially for out-of-hours callers beat the everyday
+  // audio - the admin said something specific and the recording is not it.
+  it('says the closed words rather than playing the everyday audio', () => {
+    const twiml = voicemailGreetingTwiml({ ...rule, voicemailAudioMediaId: 'media123' }, true)
+    expect(twiml).toBe('<Say voice="Polly.Amy">We are shut.</Say>')
+  })
+
+  it('falls back to the everyday audio on a closed call with nothing closed-specific', () => {
+    const twiml = voicemailGreetingTwiml(
+      { ...rule, closedVoicemailGreeting: '', voicemailAudioMediaId: 'media123' },
+      true
+    )
+    expect(twiml).toContain('/api/m/twilio/public/audio/media123')
   })
 })
 

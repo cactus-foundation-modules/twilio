@@ -6,6 +6,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSiteUrl } from '@/lib/config/env'
 import { validateTwilioSignature, isTwilioConfigured, escapeXml } from '@/modules/twilio/lib/twilio'
 import { getRuleForNumber, isRuleOpenNow } from '@/modules/twilio/lib/forwarding'
+import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
+import { greetingAudioUrl } from '@/modules/twilio/lib/greeting-audio'
+import { voiceForRegion } from '@/modules/twilio/lib/voices'
 import { voicemailTwiml, voicemailUrl } from '@/modules/twilio/lib/voicemail'
 
 const E164 = /^\+[1-9]\d{7,14}$/
@@ -37,6 +40,14 @@ export async function POST(request: NextRequest) {
   const rule = called ? await getRuleForNumber(called) : null
   if (!rule) return twiml('<Reject/>')
 
+  // Some voices only exist for US-processed calls (voices.ts, usOnly): swap
+  // them for their regional stand-in here rather than answering an Irish call
+  // with TwiML its Region cannot say - that is Twilio error 13520 and a dead
+  // line after the greeting.
+  const region = await resolveNumberRegion(called)
+  rule.greetingVoice = voiceForRegion(rule.greetingVoice, region)
+  rule.voicemailVoice = voiceForRegion(rule.voicemailVoice, region)
+
   // Whether the number is shut is worth knowing separately from whether the
   // call can be forwarded: a caller ringing out of hours can be told so, rather
   // than hearing the same "nobody is available" as a call that rang out.
@@ -52,10 +63,13 @@ export async function POST(request: NextRequest) {
     return rule.voicemailEnabled ? twiml(voicemailTwiml(rule, !open)) : twiml('<Reject/>')
   }
 
-  // Optional greeting before the dial. Voice ids were validated against the
-  // curated list on save, but only ever contain [A-Za-z.-] anyway.
+  // Optional greeting before the dial: an uploaded file plays, otherwise the
+  // typed message is said. Voice ids were validated against the curated list
+  // on save, but only ever contain [A-Za-z.-] anyway.
   let greeting = ''
-  if (rule.greetingMessage) {
+  if (rule.greetingAudioMediaId) {
+    greeting = `<Play>${escapeXml(greetingAudioUrl(rule.greetingAudioMediaId))}</Play>`
+  } else if (rule.greetingMessage) {
     const voiceAttr = rule.greetingVoice ? ` voice="${rule.greetingVoice}"` : ''
     greeting = `<Say${voiceAttr}>${escapeXml(rule.greetingMessage)}</Say>`
   }
