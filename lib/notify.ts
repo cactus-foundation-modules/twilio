@@ -5,6 +5,7 @@
 // Twilio must not be told otherwise.
 import { prisma } from '@/lib/db/prisma'
 import { sendEmail } from '@/lib/email/index'
+import { renderEmailTemplate } from '@/lib/email/render'
 import { getSiteUrl } from '@/lib/config/env'
 import { getHomeRegion, isTwilioRegion, sendSms, type TwilioRegion } from './twilio'
 import { getDefaultSmsNumber } from './numbers'
@@ -82,16 +83,9 @@ export async function sendMissedCallEmail(calledNumber: string, fromNumber: stri
     if (!settings.notifyMissedCallEmail || !settings.notifyEmail) return
     const caller = callerLabel(fromNumber)
     const url = await adminTwilioUrl()
-    await sendEmail({
-      to: settings.notifyEmail,
-      subject: `Missed call on ${calledNumber}`,
-      text:
-        `${caller} rang ${calledNumber} and nobody was able to answer.\n\n` +
-        `The full call log is at ${url}`,
-      html:
-        `<p><strong>${caller}</strong> rang <strong>${calledNumber}</strong> and nobody was able to answer.</p>` +
-        `<p><a href="${url}">Open the call log</a></p>`,
-    })
+    const rendered = await renderEmailTemplate('twilio.missed-call', { caller, calledNumber, adminUrl: url })
+    if (!rendered) return
+    await sendEmail({ to: settings.notifyEmail, subject: rendered.subject, html: rendered.html, text: rendered.text })
   } catch (err) {
     console.error('[twilio] failed to send missed-call email', err)
   }
@@ -111,16 +105,14 @@ export async function sendVoicemailEmail(row: {
     const caller = callerLabel(row.fromNumber)
     const url = await adminTwilioUrl()
     const seconds = `${row.durationSeconds} second${row.durationSeconds === 1 ? '' : 's'}`
-    await sendEmail({
-      to: settings.notifyEmail,
-      subject: `New voicemail from ${caller}`,
-      text:
-        `${caller} left a ${seconds} voicemail on ${row.toNumber}.\n\n` +
-        `Listen from the call log at ${url}`,
-      html:
-        `<p><strong>${caller}</strong> left a ${seconds} voicemail on <strong>${row.toNumber}</strong>.</p>` +
-        `<p><a href="${url}">Listen from the call log</a></p>`,
+    const rendered = await renderEmailTemplate('twilio.voicemail', {
+      caller,
+      calledNumber: row.toNumber,
+      duration: seconds,
+      adminUrl: url,
     })
+    if (!rendered) return
+    await sendEmail({ to: settings.notifyEmail, subject: rendered.subject, html: rendered.html, text: rendered.text })
   } catch (err) {
     console.error('[twilio] failed to send voicemail email', err)
   }
