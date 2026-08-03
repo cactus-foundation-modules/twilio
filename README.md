@@ -16,6 +16,9 @@ Provides:
 - **SMS login codes** - admins and members can verify a mobile number and receive their
   two-step sign-in codes by text message instead of email, delivered through the core SMS
   provider hook. If Twilio ever becomes unavailable, codes silently fall back to email.
+  Members are only offered this on their account page once the site has credentials and a
+  text-capable number to send from - until then the option is not shown at all, since there
+  is nothing they could do about it. Admins still see it, with a note saying what is missing.
 
 ## Installation
 

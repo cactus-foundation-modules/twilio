@@ -9,6 +9,11 @@ type Props = {
   endpoint: string
   title: string
   description: string
+  // Members cannot do anything about an unconfigured Twilio account, so the
+  // member card renders nothing at all rather than a warning about a service
+  // they have never heard of. The admin card keeps the warning - it is the
+  // person who would go and set it up.
+  hideWhenUnavailable?: boolean
 }
 
 type State = {
@@ -17,7 +22,7 @@ type State = {
   maskedPhone: string | null
 }
 
-export default function SmsTwoFactorCard({ endpoint, title, description }: Props) {
+export default function SmsTwoFactorCard({ endpoint, title, description, hideWhenUnavailable }: Props) {
   const [state, setState] = useState<State | null>(null)
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
@@ -99,6 +104,11 @@ export default function SmsTwoFactorCard({ endpoint, title, description }: Props
       setLoading(false)
     }
   }
+
+  // Hidden until the state says the site can actually send a text - including
+  // while the first fetch is in flight, so the card never flashes up and then
+  // vanishes on a site with no SMS provider.
+  if (hideWhenUnavailable && !state?.available) return null
 
   return (
     <div className="card">
