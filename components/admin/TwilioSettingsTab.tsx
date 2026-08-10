@@ -21,6 +21,7 @@
 import { useEffect, useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
+import TwilioAdminScreen from './TwilioAdminScreen'
 
 const ACCOUNT_SID_KEY = { key: 'TWILIO_ACCOUNT_SID', label: 'Account SID', placeholder: 'AC…' } as const
 const MAIN_TOKEN_KEY = 'TWILIO_AUTH_TOKEN'
@@ -40,6 +41,10 @@ const SUB_TABS = [
   { key: 'calls', label: 'Call handling' },
   { key: 'texting', label: 'Texting' },
   { key: 'alerts', label: 'Alerts & data' },
+  // The call and text logs (and click-to-dial) used to sit behind a sidebar link
+  // of their own. Same subject as everything else here, so they moved in as the
+  // last sub-tab and the link went away.
+  { key: 'activity', label: 'Calls & texts' },
 ] as const
 
 type SubTab = (typeof SUB_TABS)[number]['key']
@@ -674,6 +679,8 @@ export function TwilioSettingsTab() {
       {subTab === 'texting' && (!connected ? connectFirst : <TextingCard status={status} />)}
 
       {subTab === 'alerts' && (!connected ? connectFirst : <AlertsCard />)}
+
+      {subTab === 'activity' && (!connected ? connectFirst : <TwilioAdminScreen />)}
     </div>
   )
 }
