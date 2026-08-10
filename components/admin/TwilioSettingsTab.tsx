@@ -85,7 +85,7 @@ type TwilioSettings = {
 }
 
 const mutedText: React.CSSProperties = {
-  color: 'var(--color-text-muted)',
+  color: 'var(--color-text-secondary)',
   fontSize: 'var(--text-sm)',
   margin: '0 0 var(--space-3)',
 }
@@ -346,7 +346,7 @@ export function TwilioSettingsTab() {
               furniture. Connected installs get it folded away but reachable. */}
           {connected ? (
             <details style={{ marginBottom: 'var(--space-4)' }}>
-              <summary style={{ cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
                 How the set-up works
               </summary>
               <div style={{ marginTop: 'var(--space-3)' }}>{setupSteps}</div>
@@ -408,7 +408,7 @@ export function TwilioSettingsTab() {
                     <option key={r} value={r}>{REGION_LABELS[r]}</option>
                   ))}
                 </select>
-                <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
+                <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
                   The country your Twilio account itself lives in - shown on the auth-token page of
                   the Twilio console. The Account SID and main auth token below must be the ones for
                   this country, or Twilio rejects them with an &ldquo;Authenticate&rdquo; error.
@@ -419,7 +419,7 @@ export function TwilioSettingsTab() {
                 <label>
                   {ACCOUNT_SID_KEY.label}
                   {setVars[ACCOUNT_SID_KEY.key] && (
-                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-secondary))' }}>
                       (set)
                     </span>
                   )}
@@ -437,7 +437,7 @@ export function TwilioSettingsTab() {
                 <label>
                   {REGION_LABELS[homeRegion] ?? homeRegion} auth token
                   {setVars[MAIN_TOKEN_KEY] && (
-                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                    <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-secondary))' }}>
                       (set)
                     </span>
                   )}
@@ -477,7 +477,7 @@ export function TwilioSettingsTab() {
                         <label>
                           {REGION_LABELS[r] ?? r} auth token
                           {setVars[key] && (
-                            <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-muted))' }}>
+                            <span style={{ marginLeft: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--color-success, var(--color-text-secondary))' }}>
                               (set)
                             </span>
                           )}
@@ -516,7 +516,7 @@ export function TwilioSettingsTab() {
                   {testing ? 'Testing…' : 'Test connection'}
                 </button>
               </div>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', margin: 'var(--space-2) 0 0' }}>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)', margin: 'var(--space-2) 0 0' }}>
                 Test connection checks what you&apos;ve typed against Twilio right now, before
                 anything is saved - blank fields fall back to the saved values.
               </p>
@@ -538,9 +538,9 @@ export function TwilioSettingsTab() {
             {numbersError && <div className="alert alert-danger">{numbersError}</div>}
 
             {numbers === null ? (
-              <p style={{ color: 'var(--color-text-muted)' }}>Loading numbers…</p>
+              <p style={{ color: 'var(--color-text-secondary)' }}>Loading numbers…</p>
             ) : numbers.length === 0 ? (
-              <p style={{ color: 'var(--color-text-muted)' }}>
+              <p style={{ color: 'var(--color-text-secondary)' }}>
                 No phone numbers found on this Twilio account. Buy one in the Twilio console
                 first, then come back here.
               </p>
@@ -561,12 +561,12 @@ export function TwilioSettingsTab() {
                   >
                     <div style={{ minWidth: '12rem', flex: '1 1 12rem' }}>
                       <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--color-text)' }}>{n.phoneNumber}</div>
-                      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>{n.friendlyName}</div>
+                      <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{n.friendlyName}</div>
                     </div>
                     <span
                       style={{
                         fontSize: 'var(--text-xs)',
-                        color: 'var(--color-text-muted)',
+                        color: 'var(--color-text-secondary)',
                         border: '1px solid var(--color-border)',
                         borderRadius: 'var(--radius-sm)',
                         padding: '0 var(--space-2)',
@@ -824,7 +824,7 @@ function AlertsCard() {
       {loadError && <div className="alert alert-danger">{loadError}</div>}
 
       {!settings ? (
-        !loadError && <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        !loadError && <p style={{ color: 'var(--color-text-secondary)' }}>Loading…</p>
       ) : (
         <>
           <p style={mutedText}>
@@ -882,7 +882,7 @@ function AlertsCard() {
               value={settings.retentionDays}
               onChange={(e) => set('retentionDays', Math.max(0, Math.floor(Number(e.target.value) || 0)))}
             />
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
               0 keeps everything forever - the way it&apos;s always worked.
             </p>
           </div>

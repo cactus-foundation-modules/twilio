@@ -58,7 +58,7 @@ const thStyle: React.CSSProperties = {
   padding: 'var(--space-2) var(--space-3)',
   fontSize: 'var(--text-xs)',
   fontWeight: 'var(--font-semibold)',
-  color: 'var(--color-text-muted)',
+  color: 'var(--color-text-secondary)',
   textTransform: 'uppercase',
   letterSpacing: '0.04em',
   borderBottom: '1px solid var(--color-border)',
@@ -78,7 +78,7 @@ function DirectionBadge({ direction }: { direction: 'inbound' | 'outbound' }) {
     <span
       style={{
         fontSize: 'var(--text-xs)',
-        color: 'var(--color-text-muted)',
+        color: 'var(--color-text-secondary)',
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius-sm)',
         padding: '0 var(--space-2)',
@@ -154,7 +154,7 @@ function MakeCallCard({ fromNumber }: { fromNumber: string }) {
   return (
     <div className="card">
       <h2 className="card-title">Make a call</h2>
-      <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
+      <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-4)' }}>
         We ring your phone first, then connect you when you press a key. The person you are
         calling sees {fromNumber} as the caller ID.
       </p>
@@ -210,9 +210,9 @@ function CallLogCard({ calls, loading, error, phoneNumber }: { calls: CallLogEnt
       {error && <div className="alert alert-danger">{error}</div>}
 
       {loading ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading calls…</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>Loading calls…</p>
       ) : !calls || calls.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No calls on this number yet.</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>No calls on this number yet.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -238,7 +238,7 @@ function CallLogCard({ calls, loading, error, phoneNumber }: { calls: CallLogEnt
                   <td style={tdStyle}>{formatDuration(c.durationSeconds)}</td>
                   <td style={tdStyle}>
                     {c.recordingSids.length === 0 ? (
-                      <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+                      <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                         {c.recordingSids.map((sid) => (
@@ -266,7 +266,7 @@ function CallLogCard({ calls, loading, error, phoneNumber }: { calls: CallLogEnt
                                   flexBasis: '100%',
                                   margin: 0,
                                   fontSize: 'var(--text-sm)',
-                                  color: 'var(--color-text-muted)',
+                                  color: 'var(--color-text-secondary)',
                                   maxWidth: '28rem',
                                 }}
                               >
@@ -300,9 +300,9 @@ function MessageLogCard({ messages, loading, error }: { messages: MessageLogEntr
       {error && <div className="alert alert-danger">{error}</div>}
 
       {loading ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading messages…</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>Loading messages…</p>
       ) : !messages || messages.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No text messages on this number yet.</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>No text messages on this number yet.</p>
       ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -415,7 +415,7 @@ export default function TwilioAdminScreen() {
     if (!logsByNumber[n.phoneNumber]) loadLogs(n.phoneNumber)
   }
 
-  if (loading) return <p style={{ color: 'var(--color-text-muted)' }}>Loading numbers…</p>
+  if (loading) return <p style={{ color: 'var(--color-text-secondary)' }}>Loading numbers…</p>
 
   if (notConfigured) {
     return (
@@ -430,7 +430,7 @@ export default function TwilioAdminScreen() {
 
   if (numbers.length === 0) {
     return (
-      <p style={{ color: 'var(--color-text-muted)' }}>
+      <p style={{ color: 'var(--color-text-secondary)' }}>
         No phone numbers found on this Twilio account. Buy one in the Twilio console first,
         then come back here.
       </p>

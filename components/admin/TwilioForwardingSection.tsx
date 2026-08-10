@@ -85,7 +85,7 @@ const sectionHeading: React.CSSProperties = {
 const hint: React.CSSProperties = {
   margin: 0,
   fontSize: 'var(--text-sm)',
-  color: 'var(--color-text-muted)',
+  color: 'var(--color-text-secondary)',
 }
 
 // "2026-12-25" as "Fri 25 Dec 2026". Parsed as UTC and formatted in UTC, so a
@@ -143,7 +143,7 @@ function VoicePicker({
         )}
       </select>
       {substituteLabel && (
-        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
           This voice only works on numbers handled in the United States, so callers to this
           number will hear {substituteLabel} instead. Pick a different voice to choose for
           yourself.
@@ -201,7 +201,7 @@ function GreetingAudioControl({
             {value.name ?? 'audio file'}
           </span>
           {value.pending ? (
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
               uploaded - press Save to put it live
             </span>
           ) : (
@@ -234,12 +234,12 @@ function GreetingAudioControl({
         />
       )}
       {value && (
-        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
           Callers hear this recording instead of the typed message and voice.
         </p>
       )}
       {uploading && (
-        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
           Uploading…
         </p>
       )}
@@ -386,7 +386,7 @@ function HolidayImporter({
                     style={{
                       ...checkboxLabel,
                       cursor: already ? 'default' : 'pointer',
-                      color: already ? 'var(--color-text-muted)' : 'var(--color-text)',
+                      color: already ? 'var(--color-text-secondary)' : 'var(--color-text)',
                       fontSize: 'var(--text-sm)',
                     }}
                   >
@@ -397,9 +397,9 @@ function HolidayImporter({
                       onChange={() => toggle(h.date)}
                     />
                     <span style={{ minWidth: '9rem' }}>{formatHolidayDate(h.date)}</span>
-                    <span style={{ color: 'var(--color-text-muted)' }}>{h.name}</span>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>{h.name}</span>
                     {already && (
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
                         already added
                       </span>
                     )}
@@ -499,7 +499,7 @@ function HolidayDatesControl({
                   border: 'none',
                   background: 'none',
                   cursor: 'pointer',
-                  color: 'var(--color-text-muted)',
+                  color: 'var(--color-text-secondary)',
                   padding: 0,
                   fontSize: 'var(--text-sm)',
                   lineHeight: 1,
@@ -673,9 +673,9 @@ export function TwilioForwardingSection() {
           Twilio is not configured yet. Add your credentials on the Account tab, redeploy, then come back here.
         </div>
       ) : loading ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading numbers…</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>Loading numbers…</p>
       ) : numbers.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No phone numbers found on this Twilio account.</p>
+        <p style={{ color: 'var(--color-text-secondary)' }}>No phone numbers found on this Twilio account.</p>
       ) : (
         <>
           {numbers.length > 1 && (
@@ -694,7 +694,7 @@ export function TwilioForwardingSection() {
             <div key={row.sid}>
               <div style={{ marginBottom: 'var(--space-4)' }}>
                 <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--color-text)' }}>{row.phoneNumber}</div>
-                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>{row.friendlyName}</div>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{row.friendlyName}</div>
               </div>
 
               {/* ---------------- Forwarding ---------------- */}
@@ -827,7 +827,7 @@ export function TwilioForwardingSection() {
                   <option value="reject">Reject the call</option>
                 </select>
                 {row.anonymousCallers === 'voicemail' && !row.voicemailEnabled && (
-                  <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                  <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
                     Voicemail is off below, so withheld numbers will be rejected instead until
                     it&apos;s switched on.
                   </p>
@@ -855,7 +855,7 @@ export function TwilioForwardingSection() {
                       placeholder="Sorry we missed your call - we will ring you back as soon as we can."
                       onChange={(e) => updateRow(row.sid, { missedCallSmsMessage: e.target.value })}
                     />
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
                       Sent from this number where it can text, otherwise from the site&apos;s usual
                       texting number. Callers who withheld their number can&apos;t be texted back.
                     </p>
@@ -993,7 +993,7 @@ export function TwilioForwardingSection() {
                             <span style={{ minWidth: '6rem', color: 'var(--color-text)', fontSize: 'var(--text-sm)' }}>
                               {DAY_LABELS[day]}
                             </span>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
                               <input
                                 type="checkbox"
                                 checked={!entry.closed}
@@ -1009,7 +1009,7 @@ export function TwilioForwardingSection() {
                               onChange={(e) => updateDay(row, day, { open: e.target.value })}
                               style={{ width: 'auto' }}
                             />
-                            <span style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>to</span>
+                            <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>to</span>
                             <input
                               type="time"
                               aria-label={`${DAY_LABELS[day]} closing time`}
@@ -1092,7 +1092,7 @@ export function TwilioForwardingSection() {
                   {savingSid === row.sid ? 'Saving…' : savedSid === row.sid ? 'Saved' : 'Save'}
                 </button>
                 {dirtySids.has(row.sid) && (
-                  <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)' }}>
+                  <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
                     Unsaved changes
                   </span>
                 )}
