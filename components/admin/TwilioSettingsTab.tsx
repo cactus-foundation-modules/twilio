@@ -7,6 +7,8 @@
 //   Phone numbers - which account numbers the site uses, default texting number
 //   Call handling - forwarding/greeting/voicemail/hours per number (own file)
 //   Texting       - default sender summary and a send-a-test-text check
+//   Templates     - the wording of every text the site sends (core's registry,
+//                   filled in by whichever modules send texts)
 //   Alerts & data - email alerts for voicemails/missed calls, recording retention
 //
 // Credentials are stored as environment variables through the core-managed
@@ -22,6 +24,7 @@ import { useEffect, useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
 import TwilioAdminScreen from './TwilioAdminScreen'
+import TwilioSmsTemplatesCard from './TwilioSmsTemplatesCard'
 
 const ACCOUNT_SID_KEY = { key: 'TWILIO_ACCOUNT_SID', label: 'Account SID', placeholder: 'AC…' } as const
 const MAIN_TOKEN_KEY = 'TWILIO_AUTH_TOKEN'
@@ -40,6 +43,7 @@ const SUB_TABS = [
   { key: 'numbers', label: 'Phone numbers' },
   { key: 'calls', label: 'Call handling' },
   { key: 'texting', label: 'Texting' },
+  { key: 'templates', label: 'Templates' },
   { key: 'alerts', label: 'Alerts & data' },
   // The call and text logs (and click-to-dial) used to sit behind a sidebar link
   // of their own. Same subject as everything else here, so they moved in as the
@@ -677,6 +681,8 @@ export function TwilioSettingsTab() {
       {subTab === 'calls' && (!connected ? connectFirst : <TwilioForwardingSection />)}
 
       {subTab === 'texting' && (!connected ? connectFirst : <TextingCard status={status} />)}
+
+      {subTab === 'templates' && (!connected ? connectFirst : <TwilioSmsTemplatesCard />)}
 
       {subTab === 'alerts' && (!connected ? connectFirst : <AlertsCard />)}
 
