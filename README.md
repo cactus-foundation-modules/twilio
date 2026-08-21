@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="module-art.webp" alt="Cactus Twilio Module" width="640" />
+</p>
+
 # Cactus Twilio Module
 
 Twilio integration module for [Cactus](https://github.com/usersaynoso/cactus-foundation).
