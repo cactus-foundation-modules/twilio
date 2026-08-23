@@ -6,6 +6,7 @@
 // page (Twilio tab).
 import { useCallback, useEffect, useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
+import { setTabParam } from '@/modules/twilio/lib/admin-tab-url'
 
 type NumberRow = {
   sid: string
@@ -399,8 +400,12 @@ export default function TwilioAdminScreen() {
         if (!res.ok) throw new Error(d.error ?? 'Failed to load numbers')
         setNumbers(d.numbers)
         if (d.numbers.length > 0) {
-          setActiveSid(d.numbers[0].sid)
-          loadLogs(d.numbers[0].phoneNumber)
+          // A refresh comes back to the number you were reading, if it is still
+          // on the account; otherwise the first one, as before.
+          const wanted = new URLSearchParams(window.location.search).get('number')
+          const opening = d.numbers.find((n: NumberRow) => n.sid === wanted) ?? d.numbers[0]
+          setActiveSid(opening.sid)
+          loadLogs(opening.phoneNumber)
         }
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load numbers'))
@@ -409,9 +414,11 @@ export default function TwilioAdminScreen() {
 
   const active = numbers.find((n) => n.sid === activeSid)
 
-  // Lazy-load a number's logs the first time its tab is opened.
+  // Lazy-load a number's logs the first time its tab is opened, and keep which
+  // number is open in the URL so a refresh does not send you back to the first.
   function openTab(n: NumberRow) {
     setActiveSid(n.sid)
+    setTabParam('number', n.sid)
     if (!logsByNumber[n.phoneNumber]) loadLogs(n.phoneNumber)
   }
 

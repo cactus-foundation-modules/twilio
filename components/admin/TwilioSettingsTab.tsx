@@ -22,6 +22,7 @@
 // and the routing choice sits per number down in Phone numbers.
 import { useEffect, useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
+import { useTabParam } from '@/modules/twilio/lib/admin-tab-url'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
 import TwilioAdminScreen from './TwilioAdminScreen'
 import TwilioSmsTemplatesCard from './TwilioSmsTemplatesCard'
@@ -100,7 +101,7 @@ const mutedText: React.CSSProperties = {
 }
 
 export function TwilioSettingsTab() {
-  const [subTab, setSubTab] = useState<SubTab>('account')
+  const [subTab, setSubTab] = useTabParam('sub', 'account' as SubTab, SUB_TABS.map((t) => t.key))
   const [setVars, setSetVars] = useState<Record<string, boolean>>({})
   const [values, setValues] = useState<Record<string, string>>({})
   const [localMode, setLocalMode] = useState(false)
