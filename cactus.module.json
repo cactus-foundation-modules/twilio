@@ -1,9 +1,9 @@
 {
   "name": "twilio",
-  "version": "0.1.29",
+  "version": "0.1.30",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
-  "requiresCoreVersion": "0.5.1090",
+  "requiresCoreVersion": "0.5.1383",
   "requiredEnvVars": [
     { "name": "TWILIO_HOME_REGION", "required": false },
     { "name": "TWILIO_ACCOUNT_SID", "required": false },
@@ -28,7 +28,8 @@
   ],
   "extensionPoints": [
     { "point": "members.account-section", "id": "twilio-sms-2fa", "import": "./components/public/TwilioMemberSmsSection", "component": "TwilioMemberSmsSection" },
-    { "point": "admins.account-section", "id": "twilio-sms-2fa-admin", "import": "./components/admin/TwilioAdminSmsSection", "component": "TwilioAdminSmsSection" }
+    { "point": "admins.account-section", "id": "twilio-sms-2fa-admin", "import": "./components/admin/TwilioAdminSmsSection", "component": "TwilioAdminSmsSection" },
+    { "point": "core.conversation-provider", "id": "twilio", "label": "Phone", "permission": "twilio.manage", "serverOnly": true, "import": "./lib/conversation-provider", "component": "twilioConversationProvider" }
   ],
   "teardown": [
     "tw_forwarding_rules",
