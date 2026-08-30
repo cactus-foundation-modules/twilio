@@ -1,4 +1,5 @@
 import type {
+  ConversationAttachment,
   ConversationListOptions,
   ConversationListPage,
   ConversationMessage,
@@ -57,6 +58,10 @@ type Entry = {
   direction: 'in' | 'out'
   at: Date
   text: string
+  /** Voicemail-only: the recording SID for audio playback. */
+  recordingSid?: string
+  /** Voicemail-only: the site number that received the call, for region routing. */
+  toNumber?: string
 }
 
 function preview(text: string): string | null {
@@ -172,6 +177,8 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
         direction: 'in',
         at: voicemail.createdAt,
         text: words,
+        recordingSid: voicemail.recordingSid,
+        toNumber: voicemail.toNumber,
       })
     }
   } catch (err) {
@@ -238,15 +245,32 @@ function toSummary(g: Grouped): ConversationSummary {
 }
 
 function toMessages(g: Grouped): ConversationMessage[] {
-  return g.entries.map((entry) => ({
-    id: entry.id,
-    direction: entry.direction,
-    authorName: entry.direction === 'in' ? g.party : null,
-    text: entry.text,
-    html: null,
-    sentAt: entry.at,
-    attachments: [],
-  }))
+  return g.entries.map((entry) => {
+    const attachments: ConversationAttachment[] = []
+    
+    // Voicemails get an audio attachment pointing to the recording proxy
+    if (entry.kind === 'voicemail' && entry.recordingSid) {
+      const url = new URL('/api/m/twilio/admin/recordings/' + entry.recordingSid, 'http://localhost')
+      if (entry.toNumber) {
+        url.searchParams.set('number', entry.toNumber)
+      }
+      attachments.push({
+        filename: `voicemail-${entry.recordingSid}.mp3`,
+        url: url.pathname + url.search,
+        contentType: 'audio/mpeg',
+      })
+    }
+    
+    return {
+      id: entry.id,
+      direction: entry.direction,
+      authorName: entry.direction === 'in' ? g.party : null,
+      text: entry.text,
+      html: null,
+      sentAt: entry.at,
+      attachments,
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------

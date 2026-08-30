@@ -136,6 +136,13 @@ describe('one conversation', () => {
     const thread = await provider.thread('+447700900123')
     expect(thread!.messages.map((m) => m.id)).toEqual(['voicemail:RE1', 'call:CA1', 'sms:SM1'])
     expect(thread!.messages[0]!.text).toContain('ring me back')
+    expect(thread!.messages[0]!.attachments).toHaveLength(1)
+    expect(thread!.messages[0]!.attachments[0]).toMatchObject({
+      filename: 'voicemail-RE1.mp3',
+      contentType: 'audio/mpeg',
+    })
+    expect(thread!.messages[0]!.attachments[0]!.url).toContain('/api/m/twilio/admin/recordings/RE1')
+    expect(thread!.messages[0]!.attachments[0]!.url).toContain('number=%2B441134960000')
     expect(thread!.messages[1]!.text).toBe('Incoming call, 1 min 35 sec')
   })
 
