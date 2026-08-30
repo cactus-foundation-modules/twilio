@@ -79,6 +79,16 @@ export async function recordTranscription(input: {
   `
 }
 
+// Removes a voicemail from the local log. The recording itself lives in Twilio's
+// cloud and must be deleted separately via deleteRecording; this only clears the
+// metadata row so the voicemail stops appearing in listings and conversations.
+export async function deleteVoicemail(recordingSid: string): Promise<void> {
+  await prisma.$executeRaw`
+    DELETE FROM "tw_voicemails"
+    WHERE "recording_sid" = ${recordingSid}
+  `
+}
+
 // Transcriptions for the given recording SIDs, for the call log to show under
 // the voicemail badge. Same bounded shape as filterVoicemailSids.
 export async function transcriptionsForSids(

@@ -8,8 +8,9 @@ import type {
   ConversationThread,
 } from '@/lib/conversations/types'
 import { getSiteNumbers, sendSiteSms, type SiteNumber } from './numbers'
-import { isTwilioConfigured, listCallsForNumber, listMessagesForNumber } from './twilio'
-import { recentVoicemails } from './voicemail-log'
+import { isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion } from './twilio'
+import { resolveNumberRegion } from './numbers'
+import { recentVoicemails, deleteVoicemail } from './voicemail-log'
 
 // Calls, voicemail and texts, published as conversations.
 //
@@ -348,12 +349,45 @@ async function byIdentity(identity: { phones: string[] }): Promise<ConversationS
   return groups.filter((g) => wanted.has(g.party)).map(toSummary)
 }
 
+// Deletes a voicemail from both the local database and Twilio's cloud. Only
+// voicemails can be deleted - calls and texts are read live from Twilio and
+// are governed by Twilio's own retention, not ours. The message ID is
+// `voicemail:${recordingSid}`, so anything else is rejected as not ours.
+async function deleteMessage(messageId: string): Promise<boolean> {
+  if (!messageId.startsWith('voicemail:')) return false
+  
+  const recordingSid = messageId.slice('voicemail:'.length)
+  if (!/^RE[a-f0-9]{32}$/i.test(recordingSid)) return false
+  
+  try {
+    // Find the voicemail to get the toNumber for region routing
+    const voicemails = await recentVoicemails(500)
+    const voicemail = voicemails.find((v) => v.recordingSid === recordingSid)
+    if (!voicemail) return false
+    
+    const region = voicemail.toNumber ? await resolveNumberRegion(voicemail.toNumber) : getHomeRegion()
+    
+    // Delete from Twilio first - if that fails, the local row stays
+    await deleteRecording(recordingSid, region)
+    await deleteVoicemail(recordingSid)
+    
+    // Clear the cache so the deleted voicemail disappears from listings
+    forgetCachedConversations()
+    
+    return true
+  } catch (err) {
+    console.error('[twilio] failed to delete voicemail', recordingSid, err)
+    return false
+  }
+}
+
 export const twilioConversationProvider: ConversationProvider = {
   label: 'Phone',
   channel: 'phone',
-  capabilities: { reply: true, markRead: false, byIdentity: true },
+  capabilities: { reply: true, markRead: false, byIdentity: true, delete: true },
   list,
   thread,
   send,
   byIdentity,
+  deleteMessage,
 }
