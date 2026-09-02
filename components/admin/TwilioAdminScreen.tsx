@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
 import { setTabParam } from '@/modules/twilio/lib/admin-tab-url'
+import { callOutcome, type ConnectedLeg } from '@/modules/twilio/lib/call-legs'
 
 type NumberRow = {
   sid: string
@@ -23,6 +24,9 @@ type CallLogEntry = {
   startTime: string
   durationSeconds: number
   recordingSids: string[]
+  /** The second leg, where the call had one: the number a forwarded call was
+   *  passed on to, or the number click-to-dial rang first. Null otherwise. */
+  connected: ConnectedLeg | null
   /** The recordingSids that are voicemail messages rather than recorded calls. */
   voicemailSids: string[]
   /** Twilio's typed-up voicemail text, per recording SID, where one was asked for. */
@@ -95,6 +99,19 @@ function DirectionBadge({ direction }: { direction: 'inbound' | 'outbound' }) {
     >
       {direction === 'inbound' ? 'Incoming' : 'Outgoing'}
     </span>
+  )
+}
+
+// The other leg of a call that had one, said in the row it belongs to rather
+// than as a second row of its own. A forwarded call names the phone it was
+// passed on to; a click-to-dial names the phone it rang the caller on first.
+function ConnectedNote({ connected }: { connected: ConnectedLeg | null }) {
+  if (!connected) return null
+  return (
+    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
+      {connected.kind === 'forwarded' ? '\u21b3 forwarded to ' : '\u21b3 rang you at '}
+      {connected.number}
+    </div>
   )
 }
 
@@ -523,9 +540,17 @@ function CallLogCard({ calls, loading, error, phoneNumber, blockedNumbers, onBlo
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(c.startTime)}</td>
                   <td style={tdStyle}><DirectionBadge direction={c.direction} /></td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.from}</td>
-                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{c.to}</td>
-                  <td style={tdStyle}>{c.status}</td>
-                  <td style={tdStyle}>{formatDuration(c.durationSeconds)}</td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    {c.to}
+                    <ConnectedNote connected={c.connected} />
+                  </td>
+                  {/* What happened to the person on the other end, which is not
+                      the same as what happened to the call: a forwarded call
+                      that nobody picked up is a completed call. */}
+                  <td style={tdStyle}>{callOutcome(c).status}</td>
+                  <td style={tdStyle} title={`Whole call, greeting and ringing included: ${formatDuration(c.durationSeconds)}`}>
+                    {formatDuration(callOutcome(c).durationSeconds)}
+                  </td>
                   <td style={tdStyle}>
                     {c.recordingSids.length === 0 ? (
                       <span style={{ color: 'var(--color-text-secondary)' }}>—</span>

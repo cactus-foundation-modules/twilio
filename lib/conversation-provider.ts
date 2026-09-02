@@ -9,6 +9,7 @@ import type {
 } from '@/lib/conversations/types'
 import { getSiteNumbers, sendSiteSms, type SiteNumber } from './numbers'
 import { isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion } from './twilio'
+import { callOutcome } from './call-legs'
 import { resolveNumberRegion } from './numbers'
 import { recentVoicemails, deleteVoicemail } from './voicemail-log'
 import { NotBlockableError, blockNumber, isNumberBlocked, unblockNumber } from './blocked-numbers'
@@ -132,13 +133,19 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
         const calls = await listCallsForNumber(number.phoneNumber, number.region, PER_NUMBER)
         for (const call of calls) {
           const inbound = call.direction === 'inbound'
+          // Forwarded calls and click-to-dial arrive already folded into one
+          // entry each, so a call the site passed on to a colleague is a
+          // conversation with the caller and not a second one with the
+          // colleague. What the caller experienced is on the second leg, which
+          // is what callOutcome hands back.
+          const outcome = callOutcome(call)
           entries.push({
             id: `call:${call.sid}`,
             kind: 'call',
             party: normaliseNumber(inbound ? call.from : call.to),
             direction: inbound ? 'in' : 'out',
             at: new Date(call.startTime || 0),
-            text: describeCall(inbound ? 'in' : 'out', call.status, call.durationSeconds),
+            text: describeCall(inbound ? 'in' : 'out', outcome.status, outcome.durationSeconds),
           })
         }
       } catch (err) {

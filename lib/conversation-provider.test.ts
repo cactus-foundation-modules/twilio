@@ -174,6 +174,22 @@ describe('one conversation', () => {
     expect(thread!.messages[0]!.text).toBe('Missed call')
   })
 
+  it('reads a forwarded call by what the caller got, not by what Twilio logged', async () => {
+    // The call reached Twilio, played a greeting and rang for twenty seconds,
+    // so the call itself is 'completed'. Nobody answered it.
+    listCallsForNumber.mockResolvedValue([
+      {
+        ...call,
+        status: 'completed',
+        durationSeconds: 27,
+        connected: { kind: 'forwarded', number: '+447700900456', status: 'no-answer', durationSeconds: 0 },
+      },
+    ])
+    listMessagesForNumber.mockResolvedValue([])
+    const thread = await provider.thread('+447700900123')
+    expect(thread!.messages[0]!.text).toBe('Missed call')
+  })
+
   it('finds a number however it was punctuated', async () => {
     expect(await provider.thread('+44 7700 900123')).not.toBeNull()
   })

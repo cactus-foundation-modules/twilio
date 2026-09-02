@@ -19,6 +19,7 @@
 //
 // https://www.twilio.com/docs/global-infrastructure/understanding-twilio-regions
 import { createHmac, timingSafeEqual } from 'crypto'
+import { foldDialLegs, type CallLogEntry } from './call-legs'
 
 export const TWILIO_REGIONS = ['us1', 'ie1', 'au1'] as const
 export type TwilioRegion = (typeof TWILIO_REGIONS)[number]
@@ -401,16 +402,7 @@ export async function listIncomingNumbers(): Promise<IncomingNumber[]> {
   }))
 }
 
-export type CallLogEntry = {
-  sid: string
-  from: string
-  to: string
-  direction: 'inbound' | 'outbound'
-  status: string
-  startTime: string
-  durationSeconds: number
-  recordingSids: string[]
-}
+export type { CallLogEntry, ConnectedLeg } from './call-legs'
 
 // Calls to and from a number, newest first. Two filtered listings merged - the
 // Calls resource only filters on one of To/From per request. Recordings are
@@ -432,6 +424,7 @@ export async function listCallsForNumber(
     start_time: string | null
     date_created: string | null
     duration: string | null
+    parent_call_sid: string | null
   }
   const [toData, fromData, recData] = await Promise.all([
     twilioFetch(`/Calls.json?PageSize=${limit}&To=${encodeURIComponent(phoneNumber)}`, { region }),
@@ -450,17 +443,21 @@ export async function listCallsForNumber(
   const bySid = new Map<string, RawCall>()
   for (const c of [...(toData.calls ?? []), ...(fromData.calls ?? [])]) bySid.set(c.sid, c)
 
-  return [...bySid.values()]
-    .map((c) => ({
-      sid: c.sid,
-      from: c.from,
-      to: c.to,
-      direction: c.direction.startsWith('outbound') ? 'outbound' as const : 'inbound' as const,
-      status: c.status,
-      startTime: c.start_time ?? c.date_created ?? '',
-      durationSeconds: c.duration ? parseInt(c.duration, 10) || 0 : 0,
-      recordingSids: recordingsByCall.get(c.sid) ?? [],
-    }))
+  // Both legs of a forwarded call, and both legs of a click-to-dial, come back
+  // as separate calls here. foldDialLegs puts each pair back together - see
+  // call-legs.ts for why that is not cosmetic.
+  const legs = [...bySid.values()].map((c) => ({
+    sid: c.sid,
+    from: c.from,
+    to: c.to,
+    direction: c.direction,
+    status: c.status,
+    startTime: c.start_time ?? c.date_created ?? '',
+    durationSeconds: c.duration ? parseInt(c.duration, 10) || 0 : 0,
+    parentCallSid: c.parent_call_sid ?? '',
+  }))
+
+  return foldDialLegs(legs, recordingsByCall)
     .sort((a, b) => Date.parse(b.startTime || '0') - Date.parse(a.startTime || '0'))
     .slice(0, limit)
 }
