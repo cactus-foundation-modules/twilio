@@ -136,3 +136,22 @@ CREATE TABLE IF NOT EXISTS "tw_verification_codes" (
     CONSTRAINT "tw_verification_codes_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "tw_verification_codes_subject_key" ON "tw_verification_codes" ("subject_type", "subject_id");
+
+-- ---------------------------------------------------------------------------
+-- Callers refused before anything rings. The number is the key: there is one
+-- answer to "is this caller blocked", so a second row for the same number would
+-- be a contradiction rather than a second fact. E.164 only - a withheld caller
+-- has no number to keep, and each number's own anonymous_callers rule covers
+-- those. blocked_by goes null rather than taking the block with it when that
+-- person leaves.
+-- Also shipped as migrations/009_blocked_numbers.sql for existing installs.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "tw_blocked_numbers" (
+    "phone_number" TEXT         NOT NULL,
+    "reason"       TEXT         NOT NULL DEFAULT '',
+    "blocked_by"   TEXT,
+    "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tw_blocked_numbers_pkey" PRIMARY KEY ("phone_number"),
+    CONSTRAINT "tw_blocked_numbers_blocked_by_fk" FOREIGN KEY ("blocked_by")
+        REFERENCES "User" ("id") ON DELETE SET NULL
+);

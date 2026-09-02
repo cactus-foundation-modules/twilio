@@ -11,6 +11,7 @@ import { getSiteNumbers, sendSiteSms, type SiteNumber } from './numbers'
 import { isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion } from './twilio'
 import { resolveNumberRegion } from './numbers'
 import { recentVoicemails, deleteVoicemail } from './voicemail-log'
+import { NotBlockableError, blockNumber, isNumberBlocked, unblockNumber } from './blocked-numbers'
 
 // Calls, voicemail and texts, published as conversations.
 //
@@ -354,40 +355,77 @@ async function byIdentity(identity: { phones: string[] }): Promise<ConversationS
 // are governed by Twilio's own retention, not ours. The message ID is
 // `voicemail:${recordingSid}`, so anything else is rejected as not ours.
 async function deleteMessage(messageId: string): Promise<boolean> {
+  // Not ours to delete. False, per the contract: the consumer turns this into
+  // "that kind of message cannot be deleted here" rather than an error, which
+  // is exactly right for a call or a text.
   if (!messageId.startsWith('voicemail:')) return false
-  
+
   const recordingSid = messageId.slice('voicemail:'.length)
   if (!/^RE[a-f0-9]{32}$/i.test(recordingSid)) return false
-  
-  try {
-    // Find the voicemail to get the toNumber for region routing
-    const voicemails = await recentVoicemails(500)
-    const voicemail = voicemails.find((v) => v.recordingSid === recordingSid)
-    if (!voicemail) return false
-    
-    const region = voicemail.toNumber ? await resolveNumberRegion(voicemail.toNumber) : getHomeRegion()
-    
-    // Delete from Twilio first - if that fails, the local row stays
-    await deleteRecording(recordingSid, region)
+
+  // A recording we no longer hold counts as ALREADY GONE, not as a refusal.
+  // Somebody asking to be rid of something must not be told no because the far
+  // end got there first - answer false here and the inbox is left with a row it
+  // can never clear.
+  const voicemails = await recentVoicemails(500)
+  const voicemail = voicemails.find((v) => v.recordingSid === recordingSid)
+  if (!voicemail) {
     await deleteVoicemail(recordingSid)
-    
-    // Clear the cache so the deleted voicemail disappears from listings
     forgetCachedConversations()
-    
     return true
-  } catch (err) {
-    console.error('[twilio] failed to delete voicemail', recordingSid, err)
-    return false
   }
+
+  const region = voicemail.toNumber ? await resolveNumberRegion(voicemail.toNumber) : getHomeRegion()
+
+  // Twilio first - if that fails the local row stays, so it can be tried again
+  // rather than the site forgetting a recording it is still being charged for.
+  //
+  // And the failure THROWS rather than returning false. "I will not delete this
+  // kind of message" and "I tried and could not" are different answers and only
+  // one of them is worth trying again; swallowing the second into the first told
+  // somebody their voicemail was undeletable when Twilio had merely had a bad
+  // minute.
+  await deleteRecording(recordingSid, region)
+  await deleteVoicemail(recordingSid)
+  forgetCachedConversations()
+  return true
+}
+
+// --- Blocking --------------------------------------------------------------
+//
+// A conversation here IS the other party's number - that is what the grouping
+// is - so blocking a conversation and blocking a caller are the same act, and
+// the id needs no unpicking.
+
+async function blockParticipant(conversationId: string): Promise<void> {
+  const party = normaliseNumber(conversationId)
+  // A withheld caller has no number to keep. Throwing rather than quietly doing
+  // nothing: a screen that showed "Blocked" over a caller who will ring straight
+  // through tomorrow is worse than the refusal.
+  if (!/^\+/.test(party)) throw new NotBlockableError()
+  await blockNumber({ phoneNumber: party })
+}
+
+async function unblockParticipant(conversationId: string): Promise<void> {
+  const party = normaliseNumber(conversationId)
+  if (!/^\+/.test(party)) throw new NotBlockableError()
+  await unblockNumber(party)
+}
+
+async function isParticipantBlocked(conversationId: string): Promise<boolean> {
+  return isNumberBlocked(normaliseNumber(conversationId))
 }
 
 export const twilioConversationProvider: ConversationProvider = {
   label: 'Phone',
   channel: 'phone',
-  capabilities: { reply: true, markRead: false, byIdentity: true, delete: true },
+  capabilities: { reply: true, markRead: false, byIdentity: true, delete: true, block: true },
   list,
   thread,
   send,
   byIdentity,
   deleteMessage,
+  blockParticipant,
+  unblockParticipant,
+  isParticipantBlocked,
 }

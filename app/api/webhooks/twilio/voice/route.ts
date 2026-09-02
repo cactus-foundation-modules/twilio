@@ -11,6 +11,7 @@ import { greetingAudioUrl } from '@/modules/twilio/lib/greeting-audio'
 import { voiceForRegion } from '@/modules/twilio/lib/voices'
 import { voicemailTwiml, voicemailUrl } from '@/modules/twilio/lib/voicemail'
 import { getTwilioSettings } from '@/modules/twilio/lib/settings'
+import { isNumberBlocked } from '@/modules/twilio/lib/blocked-numbers'
 
 const E164 = /^\+[1-9]\d{7,14}$/
 
@@ -36,6 +37,17 @@ export async function POST(request: NextRequest) {
   if (!signature || !validateTwilioSignature(url, params, signature)) {
     return new NextResponse('Invalid signature', { status: 403 })
   }
+
+  // Blocked callers, and the position of this is the whole point.
+  //
+  // It sits AFTER the signature check, so an unsigned request cannot use it to
+  // find out who is on the list, and BEFORE everything else: the anonymous
+  // rules, the number's forwarding rule, the region lookup, opening hours,
+  // forwarding and voicemail. A blocked call must not ring a phone, record a
+  // message, send an auto-text or raise an email alert, and every one of those
+  // is downstream of here. Reject is Twilio's busy-ish refusal and costs the
+  // site nothing further.
+  if (await isNumberBlocked(params.From)) return twiml('<Reject/>')
 
   const called = params.To ?? ''
   const rule = called ? await getRuleForNumber(called) : null

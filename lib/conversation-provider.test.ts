@@ -15,10 +15,24 @@ const isTwilioConfigured = vi.hoisted(() => vi.fn())
 const listCallsForNumber = vi.hoisted(() => vi.fn())
 const listMessagesForNumber = vi.hoisted(() => vi.fn())
 const recentVoicemails = vi.hoisted(() => vi.fn())
+const deleteVoicemail = vi.hoisted(() => vi.fn())
+const deleteRecording = vi.hoisted(() => vi.fn())
+const getHomeRegion = vi.hoisted(() => vi.fn())
+const resolveNumberRegion = vi.hoisted(() => vi.fn())
+const blockNumber = vi.hoisted(() => vi.fn())
+const unblockNumber = vi.hoisted(() => vi.fn())
+const isNumberBlocked = vi.hoisted(() => vi.fn())
 
-vi.mock('./numbers', () => ({ getSiteNumbers, sendSiteSms }))
-vi.mock('./twilio', () => ({ isTwilioConfigured, listCallsForNumber, listMessagesForNumber }))
-vi.mock('./voicemail-log', () => ({ recentVoicemails }))
+class NotBlockableError extends Error {}
+
+vi.mock('./numbers', () => ({ getSiteNumbers, sendSiteSms, resolveNumberRegion }))
+vi.mock('./twilio', () => ({
+  isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion,
+}))
+vi.mock('./voicemail-log', () => ({ recentVoicemails, deleteVoicemail }))
+vi.mock('./blocked-numbers', () => ({
+  NotBlockableError, blockNumber, unblockNumber, isNumberBlocked,
+}))
 
 const { twilioConversationProvider: provider, forgetCachedConversations } = await import(
   './conversation-provider'
@@ -61,6 +75,13 @@ beforeEach(() => {
   listCallsForNumber.mockReset().mockResolvedValue([call])
   listMessagesForNumber.mockReset().mockResolvedValue([text])
   recentVoicemails.mockReset().mockResolvedValue([])
+  deleteVoicemail.mockReset().mockResolvedValue(undefined)
+  deleteRecording.mockReset().mockResolvedValue(undefined)
+  getHomeRegion.mockReset().mockReturnValue('ie1')
+  resolveNumberRegion.mockReset().mockResolvedValue('ie1')
+  blockNumber.mockReset().mockResolvedValue('+447700900123')
+  unblockNumber.mockReset().mockResolvedValue('+447700900123')
+  isNumberBlocked.mockReset().mockResolvedValue(false)
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.useFakeTimers({ now: new Date('2026-08-27T12:00:00Z') })
@@ -185,5 +206,77 @@ describe('one person’s history', () => {
   it('costs nothing when there is no number to go on', async () => {
     expect(await provider.byIdentity!({ emails: ['ada@example.com'], phones: [] })).toEqual([])
     expect(getSiteNumbers).not.toHaveBeenCalled()
+  })
+})
+
+// The three answers deleteMessage can give are deliberately different, and
+// collapsing any two of them has already cost somebody something: a voicemail
+// reported undeletable when Twilio merely had a bad minute, or an inbox left
+// holding a row it could never clear.
+describe('deleting a message', () => {
+  const SID = 'RE00000000000000000000000000000001'
+
+  it('will not touch a call or a text, and says so with false rather than throwing', async () => {
+    await expect(provider.deleteMessage!('call:CA1')).resolves.toBe(false)
+    await expect(provider.deleteMessage!('sms:SM1')).resolves.toBe(false)
+    expect(deleteRecording).not.toHaveBeenCalled()
+  })
+
+  it('deletes the recording at Twilio before forgetting it here', async () => {
+    recentVoicemails.mockResolvedValue([
+      { recordingSid: SID, toNumber: '+441134960000' },
+    ])
+
+    await expect(provider.deleteMessage!(`voicemail:${SID}`)).resolves.toBe(true)
+
+    // Twilio first: if that fails the local row stays and it can be tried
+    // again, rather than the site forgetting a recording it still pays for.
+    expect(deleteRecording).toHaveBeenCalledWith(SID, 'ie1')
+    expect(deleteVoicemail).toHaveBeenCalledWith(SID)
+  })
+
+  it('counts a recording we no longer hold as already gone, not as a refusal', async () => {
+    recentVoicemails.mockResolvedValue([])
+
+    // False here would leave the inbox with a row it can never clear, because
+    // the far end got there first.
+    await expect(provider.deleteMessage!(`voicemail:${SID}`)).resolves.toBe(true)
+    expect(deleteVoicemail).toHaveBeenCalledWith(SID)
+  })
+
+  it('throws when Twilio refuses, because that is worth trying again', async () => {
+    recentVoicemails.mockResolvedValue([
+      { recordingSid: SID, toNumber: '+441134960000' },
+    ])
+    deleteRecording.mockRejectedValue(new Error('Twilio said no'))
+
+    await expect(provider.deleteMessage!(`voicemail:${SID}`)).rejects.toThrow('Twilio said no')
+    // And the local row stays, so nothing is forgotten that still exists.
+    expect(deleteVoicemail).not.toHaveBeenCalled()
+  })
+})
+
+describe('refusing a caller', () => {
+  it('blocks the number the conversation is with', async () => {
+    await provider.blockParticipant!('+447700900123')
+    expect(blockNumber).toHaveBeenCalledWith({ phoneNumber: '+447700900123' })
+  })
+
+  it('lets them through again', async () => {
+    await provider.unblockParticipant!('+447700900123')
+    expect(unblockNumber).toHaveBeenCalledWith('+447700900123')
+  })
+
+  it('refuses a withheld caller in words rather than pretending to block them', async () => {
+    // There is no number to keep, so a row would block every withheld caller at
+    // once while claiming to block one. The number's own anonymous-callers rule
+    // is the honest way to turn those away.
+    await expect(provider.blockParticipant!('anonymous')).rejects.toBeInstanceOf(NotBlockableError)
+    expect(blockNumber).not.toHaveBeenCalled()
+  })
+
+  it('says whether they are blocked, so a screen can offer the right button', async () => {
+    isNumberBlocked.mockResolvedValue(true)
+    await expect(provider.isParticipantBlocked!('+447700900123')).resolves.toBe(true)
   })
 })

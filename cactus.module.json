@@ -1,16 +1,34 @@
 {
   "name": "twilio",
-  "version": "0.1.32",
+  "version": "0.1.33",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
-  "requiresCoreVersion": "0.5.1383",
+  "requiresCoreVersion": "0.5.1441",
   "requiredEnvVars": [
-    { "name": "TWILIO_HOME_REGION", "required": false },
-    { "name": "TWILIO_ACCOUNT_SID", "required": false },
-    { "name": "TWILIO_AUTH_TOKEN", "required": false },
-    { "name": "TWILIO_AUTH_TOKEN_US1", "required": false },
-    { "name": "TWILIO_AUTH_TOKEN_IE1", "required": false },
-    { "name": "TWILIO_AUTH_TOKEN_AU1", "required": false }
+    {
+      "name": "TWILIO_HOME_REGION",
+      "required": false
+    },
+    {
+      "name": "TWILIO_ACCOUNT_SID",
+      "required": false
+    },
+    {
+      "name": "TWILIO_AUTH_TOKEN",
+      "required": false
+    },
+    {
+      "name": "TWILIO_AUTH_TOKEN_US1",
+      "required": false
+    },
+    {
+      "name": "TWILIO_AUTH_TOKEN_IE1",
+      "required": false
+    },
+    {
+      "name": "TWILIO_AUTH_TOKEN_AU1",
+      "required": false
+    }
   ],
   "permissions": [
     "twilio.manage"
@@ -21,17 +39,47 @@
     "export": "twilioEmailTemplates"
   },
   "settingsTabs": [
-    { "id": "twilio", "label": "Twilio", "permission": "twilio.manage", "import": "./components/admin/TwilioSettingsTab", "component": "TwilioSettingsTab" }
+    {
+      "id": "twilio",
+      "label": "Twilio",
+      "permission": "twilio.manage",
+      "import": "./components/admin/TwilioSettingsTab",
+      "component": "TwilioSettingsTab"
+    }
   ],
   "smsProviders": [
-    { "id": "twilio", "label": "Twilio SMS", "import": "./lib/sms-provider", "export": "twilioSmsProvider" }
+    {
+      "id": "twilio",
+      "label": "Twilio SMS",
+      "import": "./lib/sms-provider",
+      "export": "twilioSmsProvider"
+    }
   ],
   "extensionPoints": [
-    { "point": "members.account-section", "id": "twilio-sms-2fa", "import": "./components/public/TwilioMemberSmsSection", "component": "TwilioMemberSmsSection" },
-    { "point": "admins.account-section", "id": "twilio-sms-2fa-admin", "import": "./components/admin/TwilioAdminSmsSection", "component": "TwilioAdminSmsSection" },
-    { "point": "core.conversation-provider", "id": "twilio", "label": "Phone", "permission": "twilio.manage", "serverOnly": true, "import": "./lib/conversation-provider", "component": "twilioConversationProvider" }
+    {
+      "point": "members.account-section",
+      "id": "twilio-sms-2fa",
+      "import": "./components/public/TwilioMemberSmsSection",
+      "component": "TwilioMemberSmsSection"
+    },
+    {
+      "point": "admins.account-section",
+      "id": "twilio-sms-2fa-admin",
+      "import": "./components/admin/TwilioAdminSmsSection",
+      "component": "TwilioAdminSmsSection"
+    },
+    {
+      "point": "core.conversation-provider",
+      "id": "twilio",
+      "label": "Phone",
+      "permission": "twilio.manage",
+      "serverOnly": true,
+      "import": "./lib/conversation-provider",
+      "component": "twilioConversationProvider"
+    }
   ],
   "teardown": [
+    "tw_blocked_numbers",
     "tw_forwarding_rules",
     "tw_settings",
     "tw_site_numbers",
@@ -40,7 +88,10 @@
   ],
   "cookieCategories": [],
   "cronJobs": [
-    { "path": "/api/m/twilio/cron/retention", "schedule": "20 4 * * *" }
+    {
+      "path": "/api/m/twilio/cron/retention",
+      "schedule": "20 4 * * *"
+    }
   ],
   "memberExtensions": {
     "activityTypes": [],
