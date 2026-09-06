@@ -7,7 +7,12 @@ import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
 import { getSiteUrl } from '@/lib/config/env'
 import { isTwilioConfigured, setNumberVoiceUrl } from '@/modules/twilio/lib/twilio'
-import { isAnonymousCallerMode, upsertForwardingRule } from '@/modules/twilio/lib/forwarding'
+import {
+  getFollowers,
+  getRuleBySid,
+  isAnonymousCallerMode,
+  upsertForwardingRule,
+} from '@/modules/twilio/lib/forwarding'
 import { MAX_MISSED_CALL_SMS_LENGTH } from '@/modules/twilio/lib/notify'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
@@ -39,6 +44,9 @@ const Body = z.object({
   greetingAudioMediaId: z.string().default(''),
   voicemailAudioMediaId: z.string().default(''),
   closedVoicemailAudioMediaId: z.string().default(''),
+  // Another number's phone SID to copy call handling from. Empty = this number
+  // uses its own settings, which is every number until somebody says otherwise.
+  followsPhoneSid: z.string().default(''),
 })
 
 // A rule may only reference media that is genuinely an uploaded audio file -
@@ -60,6 +68,31 @@ async function audioIdsProblem(ids: string[]): Promise<string | null> {
     }
   }
   return null
+}
+
+// Numbers copying this one answer calls on its terms, so a save that switches
+// this number's forwarding and voicemail both off (or back on) has to move
+// their Twilio webhooks with it - otherwise a follower keeps answering calls it
+// has no answer for, or stops answering ones it should. A follower's webhook
+// failing is logged rather than thrown: the number that was actually being
+// edited has saved correctly, and losing that to a second number's Twilio
+// hiccup helps nobody.
+async function repointFollowers(
+  leaderPhoneSid: string,
+  answering: boolean,
+  webhookUrl: string
+): Promise<void> {
+  const followers = await getFollowers(leaderPhoneSid)
+  await Promise.all(
+    followers.map(async (follower) => {
+      try {
+        const region = await resolveNumberRegion(follower.phoneNumber)
+        await setNumberVoiceUrl(follower.phoneSid, answering ? webhookUrl : '', region)
+      } catch (err) {
+        console.error('[twilio] failed to re-point linked number', follower.phoneNumber, err)
+      }
+    })
+  )
 }
 
 export async function PUT(request: NextRequest) {
@@ -126,15 +159,42 @@ export async function PUT(request: NextRequest) {
   ])
   if (audioProblem) return errorResponse(audioProblem)
 
+  // Linking this number to another one. Refused unless it can only ever mean
+  // one thing: not itself, a number that has settings to copy, a number that
+  // is not itself copying someone else, and not while other numbers are
+  // copying THIS one. Those last two together keep it to a single hop, so
+  // "what does this number do" is always answered by exactly one other row.
+  const { followsPhoneSid } = parsed.data
+  let leaderRule: Awaited<ReturnType<typeof getRuleBySid>> = null
+  if (followsPhoneSid) {
+    if (followsPhoneSid === phoneSid) {
+      return errorResponse('A number cannot copy its own settings')
+    }
+    leaderRule = await getRuleBySid(followsPhoneSid)
+    if (!leaderRule) {
+      return errorResponse('Set that number\u2019s call handling up first, then link this one to it')
+    }
+    if (leaderRule.followsPhoneSid) {
+      return errorResponse('That number already copies another number. Link to the original instead.')
+    }
+    const ownFollowers = await getFollowers(phoneSid)
+    if (ownFollowers.length > 0) {
+      return errorResponse(
+        'Other numbers copy this one, so it cannot copy another. Unlink those first.'
+      )
+    }
+  }
+
   let forwardTo = ''
-  if (enabled) {
+  if (enabled && !followsPhoneSid) {
     const normalised = normalisePhone(parsed.data.forwardTo)
     if (!normalised) {
       return errorResponse('Forward-to number must be in international format, e.g. +447700900123')
     }
     forwardTo = normalised
   } else if (parsed.data.forwardTo) {
-    // Keep the stored target (if valid) so re-enabling doesn't lose it.
+    // Keep the stored target (if valid) so re-enabling - or unlinking - doesn't
+    // lose it. A linked number's own settings sit dormant, not deleted.
     forwardTo = normalisePhone(parsed.data.forwardTo) ?? ''
   }
 
@@ -148,9 +208,15 @@ export async function PUT(request: NextRequest) {
     // Region - webhook config is per-Region at Twilio, so a number routed to
     // ie1 needs its VoiceUrl set on the ie1 resource or it never rings this
     // site (the outage this comment is fixing).
+    //
+    // A linked number answers according to the number it copies, not its own
+    // dormant settings, so the leader's rule decides its webhook too.
     const webhookUrl = `${getSiteUrl()}/api/m/twilio/webhooks/voice`
+    const answering = leaderRule
+      ? leaderRule.enabled || leaderRule.voicemailEnabled
+      : enabled || voicemailEnabled
     const region = await resolveNumberRegion(phoneNumber)
-    await setNumberVoiceUrl(phoneSid, enabled || voicemailEnabled ? webhookUrl : '', region)
+    await setNumberVoiceUrl(phoneSid, answering ? webhookUrl : '', region)
     await upsertForwardingRule({
       phoneSid,
       phoneNumber,
@@ -175,7 +241,9 @@ export async function PUT(request: NextRequest) {
       greetingAudioMediaId,
       voicemailAudioMediaId,
       closedVoicemailAudioMediaId,
+      followsPhoneSid,
     })
+    await repointFollowers(phoneSid, enabled || voicemailEnabled, webhookUrl)
     return NextResponse.json({ ok: true })
   } catch (err) {
     return errorResponse(err instanceof Error ? err.message : 'Failed to update forwarding', 502)

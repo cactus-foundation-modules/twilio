@@ -50,6 +50,8 @@ type NumberRow = {
   missedCallSmsMessage: string
   transcribeVoicemail: boolean
   anonymousCallers: 'allow' | 'voicemail' | 'reject'
+  /** Phone SID of the number this one copies its call handling from. Empty = its own. */
+  followsPhoneSid: string
 }
 
 const VOICE_GROUPS = [...new Set(TWILIO_VOICES.map((v) => v.group))]
@@ -585,6 +587,11 @@ export function TwilioForwardingSection() {
           greetingAudioMediaId: row.greetingAudio?.id ?? '',
           voicemailAudioMediaId: row.voicemailAudio?.id ?? '',
           closedVoicemailAudioMediaId: row.closedVoicemailAudio?.id ?? '',
+          // A link to a number that has since left the Twilio account is not
+          // worth keeping - the form has been showing this number as using its
+          // own settings, and the save makes that true rather than bouncing on
+          // a target the admin can no longer see.
+          followsPhoneSid: numbers.some((n) => n.sid === row.followsPhoneSid) ? row.followsPhoneSid : '',
         }),
       })
       const d = await res.json()
@@ -652,6 +659,18 @@ export function TwilioForwardingSection() {
   }
 
   const row = numbers.find((n) => n.sid === selectedSid) ?? null
+  // The number this one copies, if it is still on the account. A link pointing
+  // at a number that has gone reads as no link at all: getRuleForNumber falls
+  // back to the number's own stored settings, so saying anything else here
+  // would be describing behaviour that is not happening.
+  const leader = row ? numbers.find((n) => n.sid === row.followsPhoneSid) ?? null : null
+  const linkBroken = !!row && row.followsPhoneSid !== '' && leader === null
+  // Numbers copying THIS one. While there are any, it may not copy a third -
+  // one hop only, so a number's behaviour is never a chain to trace.
+  const followers = row ? numbers.filter((n) => n.followsPhoneSid === row.sid) : []
+  // Only numbers that stand on their own can be copied, for the same reason.
+  const linkTargets = row ? numbers.filter((n) => n.sid !== row.sid && n.followsPhoneSid === '') : []
+  const numberLabel = (n: NumberRow) => (n.friendlyName ? `${n.phoneNumber} (${n.friendlyName})` : n.phoneNumber)
 
   return (
     <div className="card">
@@ -659,7 +678,9 @@ export function TwilioForwardingSection() {
       <p style={{ ...hint, margin: '0 0 var(--space-4)' }}>
         Choose where each of your Twilio numbers forwards incoming calls, and what happens when
         nobody picks up. With forwarding and voicemail both off, the number reverts to whatever
-        it did before. Saving here wires the number up at Twilio automatically - there&apos;s
+        it did before. If two numbers should behave identically - your text number and your main
+        line, say - tell one to do exactly what the other does and it keeps itself in step from
+        then on. Saving here wires the number up at Twilio automatically - there&apos;s
         nothing to configure in the Twilio console. If you do go looking there, flip the
         console&apos;s region switcher (top right) to the same country the number is handled in:
         each country keeps its own copy of a number&apos;s call settings, so the wrong
@@ -697,6 +718,63 @@ export function TwilioForwardingSection() {
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>{row.friendlyName}</div>
               </div>
 
+              {/* ---------------- Copying another number ---------------- */}
+              <div className="field" style={{ margin: '0 0 var(--space-4)', maxWidth: '30rem' }}>
+                <label htmlFor={`follows-${row.sid}`}>Call handling</label>
+                <select
+                  id={`follows-${row.sid}`}
+                  value={leader?.sid ?? ''}
+                  disabled={followers.length > 0 || linkTargets.length === 0}
+                  onChange={(e) => updateRow(row.sid, { followsPhoneSid: e.target.value })}
+                >
+                  <option value="">Set up on its own, below</option>
+                  {linkTargets.map((n) => (
+                    <option key={n.sid} value={n.sid}>Do exactly what {numberLabel(n)} does</option>
+                  ))}
+                </select>
+                {followers.length > 0 && (
+                  <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
+                    {followers.map((n) => n.phoneNumber).join(', ')}{' '}
+                    {followers.length === 1 ? 'copies' : 'copy'} this number, so it can&apos;t copy
+                    another one itself. Unhook {followers.length === 1 ? 'it' : 'them'} first if you
+                    want to.
+                  </p>
+                )}
+                {linkBroken && (
+                  <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
+                    This number used to copy another one that has since left your Twilio account,
+                    so it is back on its own settings below. Press Save to tidy that up.
+                  </p>
+                )}
+              </div>
+
+              {leader ? (
+                <div style={{ ...sectionBox, marginTop: 0 }}>
+                  <p style={{ ...hint, color: 'var(--color-text)' }}>
+                    This number does exactly what {numberLabel(leader)} does - the same forwarding,
+                    voicemail, greetings, opening hours and everything else. Change that number and
+                    this one changes with it; there is nothing to keep in step by hand.
+                  </p>
+                  <p style={{ ...hint, marginTop: 'var(--space-2)' }}>
+                    Callers still ring {row.phoneNumber}, and anything sent back to them - a
+                    missed-call text, say - comes from {row.phoneNumber} rather than{' '}
+                    {leader.phoneNumber}.
+                  </p>
+                  <p style={{ ...hint, marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)' }}>
+                    This number&apos;s own settings are kept safe in the meantime. Put it back on its
+                    own above and they return exactly as they were.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginTop: 'var(--space-3)' }}
+                    onClick={() => setSelectedSid(leader.sid)}
+                  >
+                    Edit {leader.phoneNumber}
+                  </button>
+                </div>
+              ) : (
+              <>
               {/* ---------------- Forwarding ---------------- */}
               <h3 style={sectionHeading}>Forwarding</h3>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)' }}>
@@ -1083,10 +1161,13 @@ export function TwilioForwardingSection() {
                 )}
               </div>
 
+              </>
+              )}
+
               <div style={{ ...sectionBox, display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <button
                   className="btn btn-primary"
-                  disabled={savingSid === row.sid || (row.forwardingEnabled && !row.forwardTo)}
+                  disabled={savingSid === row.sid || (!leader && row.forwardingEnabled && !row.forwardTo)}
                   onClick={() => saveRow(row)}
                 >
                   {savingSid === row.sid ? 'Saving…' : savedSid === row.sid ? 'Saved' : 'Save'}

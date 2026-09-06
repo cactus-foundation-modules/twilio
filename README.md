@@ -17,12 +17,28 @@ Provides:
   module, which answers with TwiML that dials your chosen number. Each number can also take
   a voicemail when nobody answers, and keep opening hours - outside them the phone never
   rings, and callers can hear a greeting of their own instead of the usual one.
+- **One number that behaves like another** - a number can be told to do exactly what another
+  one does rather than being set up twice. Its settings are read from the number it copies
+  at call time, so changing the original changes both, with nothing to keep in step by hand.
+  Only one step is allowed - a copier cannot itself be copied - and the copier's own
+  settings are kept, so unlinking gives them straight back.
 - **Click-to-dial, here and everywhere else** - each number's tab can ring somebody:
   Twilio calls you first, reads out who you are about to ring, and connects the two once
   you press a key, with the site's number as the caller ID rather than your mobile. The
   same call is offered to the rest of the site through core's `core.dialler` seam, so
   anything with a customer's number on screen - the Unified Inbox, for one - can place it
   without knowing that Twilio exists.
+- **WhatsApp** - the same Twilio account carries WhatsApp, so conversations arrive beside
+  the calls and texts and can be answered from the same place. A WhatsApp tab on the Twilio
+  settings tab picks the sending number (one of your own once WhatsApp has approved it, or
+  Twilio's shared sandbox number while you are waiting), keeps the approved templates the
+  site uses, sends a message and lists what has been said, photographs included. The
+  24-hour rule is treated as a fact rather than a footnote: WhatsApp only carries an
+  ordinary message for a day after somebody last wrote, so outside that a plain message is
+  refused with the reason rather than accepted and quietly dropped, and an approved
+  template is offered instead. Published to the rest of the site as its own conversation
+  channel, separate from the phone one, so a hub like the Unified Inbox lists it in its own
+  right.
 - **SMS login codes** - admins and members can verify a mobile number and receive their
   two-step sign-in codes by text message instead of email, delivered through the core SMS
   provider hook. If Twilio ever becomes unavailable, codes silently fall back to email.

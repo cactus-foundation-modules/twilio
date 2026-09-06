@@ -54,6 +54,13 @@ export type ForwardingRule = {
   greetingAudioMediaId: string
   voicemailAudioMediaId: string
   closedVoicemailAudioMediaId: string
+  /**
+   * The phone_sid of another number this one copies its call handling from.
+   * Empty = the number uses its own settings. On a rule returned by
+   * getRuleForNumber this is always empty: the link has already been followed
+   * by then, and the caller is looking at the settings that apply.
+   */
+  followsPhoneSid: string
 }
 
 const RULE_COLUMNS = `
@@ -63,7 +70,7 @@ const RULE_COLUMNS = `
     closed_voicemail_greeting, voicemail_voice, business_hours, holiday_dates,
     missed_call_sms_enabled, missed_call_sms_message, transcribe_voicemail,
     anonymous_callers, greeting_audio_media_id, voicemail_audio_media_id,
-    closed_voicemail_audio_media_id
+    closed_voicemail_audio_media_id, follows_phone_sid
 `
 
 function mapRow(r: Record<string, unknown>): ForwardingRule {
@@ -98,6 +105,32 @@ function mapRow(r: Record<string, unknown>): ForwardingRule {
     greetingAudioMediaId: r.greeting_audio_media_id as string,
     voicemailAudioMediaId: r.voicemail_audio_media_id as string,
     closedVoicemailAudioMediaId: r.closed_voicemail_audio_media_id as string,
+    followsPhoneSid: r.follows_phone_sid as string,
+  }
+}
+
+// The settings that apply to a number that follows another: the leader's
+// behaviour wearing the follower's identity. Which side each field comes from
+// is the whole design, so it is spelled out rather than spread:
+//
+//  - id, phoneSid, phoneNumber stay the FOLLOWER's. A missed call on the text
+//    number must text back from the text number and name it in the alert email,
+//    not name the landline nobody rang.
+//  - every behaviour field is the LEADER's, which is the point of linking. That
+//    includes showCalledNumber, and the caller ID it produces is still the
+//    number actually dialled - the webhook takes that from the call, not here.
+//  - followsPhoneSid comes back empty: the link has been followed, and a rule
+//    that still claimed to be following something would invite a second hop.
+//
+// Exported for the tests, and because "what does linking actually do" deserves
+// one function to read rather than an inline spread at the call site.
+export function linkedRule(follower: ForwardingRule, leader: ForwardingRule): ForwardingRule {
+  return {
+    ...leader,
+    id: follower.id,
+    phoneSid: follower.phoneSid,
+    phoneNumber: follower.phoneNumber,
+    followsPhoneSid: '',
   }
 }
 
@@ -117,7 +150,46 @@ export async function getRuleForNumber(phoneNumber: string): Promise<ForwardingR
     phoneNumber
   )
   const row = rows[0]
+  if (!row) return null
+  const rule = mapRow(row)
+  if (!rule.followsPhoneSid) return rule
+
+  // Linked to another number: read that number's settings live, so a change
+  // made on the leader applies to this number on the very next call with
+  // nothing to re-save. Only ever one hop - a leader may not itself be a
+  // follower (enforced on save), and linkedRule clears the field anyway.
+  const leader = await getRuleBySid(rule.followsPhoneSid)
+  // The leader having gone (removed from the Twilio account, say) leaves the
+  // follower on its own stored settings rather than unreachable. Its saved
+  // values were never overwritten, so this is a real fallback, not a guess.
+  return leader ? linkedRule(rule, leader) : { ...rule, followsPhoneSid: '' }
+}
+
+// One rule by Twilio phone SID, exactly as stored - the link is NOT followed.
+// Used to resolve a link and to validate a new one.
+export async function getRuleBySid(phoneSid: string): Promise<ForwardingRule | null> {
+  const rows = await prisma.$queryRawUnsafe<Record<string, unknown>[]>(
+    `SELECT ${RULE_COLUMNS} FROM "tw_forwarding_rules" WHERE phone_sid = $1 LIMIT 1`,
+    phoneSid
+  )
+  const row = rows[0]
   return row ? mapRow(row) : null
+}
+
+// The numbers following this one. A leader's save has to re-point their Twilio
+// voice webhooks too: switching the leader's forwarding and voicemail both off
+// leaves every follower answering calls it no longer has an answer for.
+export async function getFollowers(
+  leaderPhoneSid: string
+): Promise<Array<{ phoneSid: string; phoneNumber: string }>> {
+  const rows = await prisma.$queryRaw<Record<string, unknown>[]>`
+    SELECT phone_sid, phone_number FROM "tw_forwarding_rules"
+    WHERE follows_phone_sid = ${leaderPhoneSid}
+  `
+  return rows.map((r) => ({
+    phoneSid: r.phone_sid as string,
+    phoneNumber: r.phone_number as string,
+  }))
 }
 
 // The site timezone, defaulting to UTC when there is no config row yet.
@@ -163,6 +235,7 @@ export async function upsertForwardingRule(input: {
   greetingAudioMediaId: string
   voicemailAudioMediaId: string
   closedVoicemailAudioMediaId: string
+  followsPhoneSid: string
 }): Promise<void> {
   // Sent as JSON strings and cast, so the jsonb columns get JSON documents
   // rather than Postgres trying to read the arrays as text[].
@@ -176,7 +249,8 @@ export async function upsertForwardingRule(input: {
        closed_voicemail_greeting, voicemail_voice, business_hours,
        holiday_dates, missed_call_sms_enabled, missed_call_sms_message,
        transcribe_voicemail, anonymous_callers, greeting_audio_media_id,
-       voicemail_audio_media_id, closed_voicemail_audio_media_id, updated_at)
+       voicemail_audio_media_id, closed_voicemail_audio_media_id,
+       follows_phone_sid, updated_at)
     VALUES (${input.phoneSid}, ${input.phoneNumber}, ${input.forwardTo},
             ${input.forwardToSecond}, ${input.enabled},
             ${input.greetingMessage}, ${input.greetingVoice}, ${input.recordCalls},
@@ -186,7 +260,8 @@ export async function upsertForwardingRule(input: {
             ${input.missedCallSmsEnabled}, ${input.missedCallSmsMessage},
             ${input.transcribeVoicemail}, ${input.anonymousCallers},
             ${input.greetingAudioMediaId}, ${input.voicemailAudioMediaId},
-            ${input.closedVoicemailAudioMediaId}, CURRENT_TIMESTAMP)
+            ${input.closedVoicemailAudioMediaId}, ${input.followsPhoneSid},
+            CURRENT_TIMESTAMP)
     ON CONFLICT (phone_sid) DO UPDATE SET
       phone_number       = EXCLUDED.phone_number,
       forward_to         = EXCLUDED.forward_to,
@@ -210,6 +285,7 @@ export async function upsertForwardingRule(input: {
       greeting_audio_media_id         = EXCLUDED.greeting_audio_media_id,
       voicemail_audio_media_id        = EXCLUDED.voicemail_audio_media_id,
       closed_voicemail_audio_media_id = EXCLUDED.closed_voicemail_audio_media_id,
+      follows_phone_sid  = EXCLUDED.follows_phone_sid,
       updated_at         = CURRENT_TIMESTAMP
   `
 }

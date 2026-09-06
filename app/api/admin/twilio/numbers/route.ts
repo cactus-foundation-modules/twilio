@@ -87,6 +87,9 @@ export async function GET() {
           greetingAudio: audioField(rule?.greetingAudioMediaId ?? ''),
           voicemailAudio: audioField(rule?.voicemailAudioMediaId ?? ''),
           closedVoicemailAudio: audioField(rule?.closedVoicemailAudioMediaId ?? ''),
+          // The stored link, not the resolved one - this page edits rules, so
+          // it needs to show what was chosen rather than what it works out to.
+          followsPhoneSid: rule?.followsPhoneSid ?? '',
         }
       }),
     })

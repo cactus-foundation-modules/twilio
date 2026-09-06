@@ -59,7 +59,7 @@ const REGION_EDGE: Record<Exclude<TwilioRegion, 'us1'>, string> = {
   au1: 'sydney',
 }
 
-function regionHost(product: 'api' | 'routes', region: TwilioRegion): string {
+export function regionHost(product: 'api' | 'routes', region: TwilioRegion): string {
   return region === 'us1'
     ? `${product}.twilio.com`
     : `${product}.${REGION_EDGE[region]}.${region}.twilio.com`
@@ -179,7 +179,7 @@ export function accountSidProblem(accountSid: string): string | null {
   return 'The Account SID does not look right - it should start with AC followed by 32 characters.'
 }
 
-function regionCredentials(region: TwilioRegion): { accountSid: string; authToken: string } {
+export function regionCredentials(region: TwilioRegion): { accountSid: string; authToken: string } {
   const accountSid = process.env.TWILIO_ACCOUNT_SID
   if (!accountSid) throw new Error('Twilio is not configured')
   const sidProblem = accountSidProblem(accountSid)
@@ -189,12 +189,17 @@ function regionCredentials(region: TwilioRegion): { accountSid: string; authToke
   return { accountSid, authToken }
 }
 
-function authHeader(accountSid: string, authToken: string): string {
+export function authHeader(accountSid: string, authToken: string): string {
   return `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString('base64')}`
 }
 
 // The classic 2010-04-01 account API, in one Region.
-async function twilioFetch(
+//
+// Exported for lib/whatsapp.ts, which speaks the same API against the same
+// Messages resource and has no business opening a second connection to it.
+// Module-internal: nothing outside this module should be reaching Twilio
+// directly, and nothing outside it can, because the credentials only exist here.
+export async function twilioFetch(
   path: string,
   init?: { method?: string; form?: Record<string, string>; region?: TwilioRegion }
 ): Promise<unknown> {

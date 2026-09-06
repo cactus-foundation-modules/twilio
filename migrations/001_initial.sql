@@ -51,12 +51,17 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     "transcribe_voicemail"    BOOLEAN NOT NULL DEFAULT false,
     "anonymous_callers"       TEXT    NOT NULL DEFAULT 'allow',
     "forward_to_second"       TEXT    NOT NULL DEFAULT '',
+    -- The phone_sid of another number this one copies its call handling from.
+    -- Empty = the number uses its own settings. Only one level is allowed: a
+    -- number that follows another may not itself be followed. See migration 010.
+    "follows_phone_sid"       TEXT    NOT NULL DEFAULT '',
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "tw_forwarding_rules_phone_sid_key" ON "tw_forwarding_rules" ("phone_sid");
 CREATE INDEX IF NOT EXISTS "tw_forwarding_rules_phone_number_idx" ON "tw_forwarding_rules" ("phone_number");
+CREATE INDEX IF NOT EXISTS "tw_forwarding_rules_follows_idx" ON "tw_forwarding_rules" ("follows_phone_sid") WHERE "follows_phone_sid" <> '';
 
 -- ---------------------------------------------------------------------------
 -- Numbers from the connected Twilio account that the admin has added to the

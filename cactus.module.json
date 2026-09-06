@@ -1,9 +1,9 @@
 {
   "name": "twilio",
-  "version": "0.1.36",
+  "version": "0.1.38",
   "tablePrefix": "tw_",
-  "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
-  "requiresCoreVersion": "0.5.1536",
+  "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, WhatsApp messaging with approved templates, and SMS login codes for admins and members.",
+  "requiresCoreVersion": "0.5.1541",
   "requiredEnvVars": [
     {
       "name": "TWILIO_HOME_REGION",
@@ -78,6 +78,15 @@
       "component": "twilioConversationProvider"
     },
     {
+      "point": "core.conversation-provider",
+      "id": "twilio-whatsapp",
+      "label": "WhatsApp",
+      "permission": "twilio.manage",
+      "serverOnly": true,
+      "import": "./lib/whatsapp-conversation-provider",
+      "component": "whatsappConversationProvider"
+    },
+    {
       "point": "core.dialler",
       "id": "twilio-dialler",
       "label": "Twilio",
@@ -92,7 +101,8 @@
     "tw_settings",
     "tw_site_numbers",
     "tw_verification_codes",
-    "tw_voicemails"
+    "tw_voicemails",
+    "tw_whatsapp_templates"
   ],
   "cookieCategories": [],
   "cronJobs": [
