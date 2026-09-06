@@ -1,9 +1,9 @@
 {
   "name": "twilio",
-  "version": "0.1.34",
+  "version": "0.1.35",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, and SMS login codes for admins and members.",
-  "requiresCoreVersion": "0.5.1441",
+  "requiresCoreVersion": "0.5.1534",
   "requiredEnvVars": [
     {
       "name": "TWILIO_HOME_REGION",
@@ -76,6 +76,14 @@
       "serverOnly": true,
       "import": "./lib/conversation-provider",
       "component": "twilioConversationProvider"
+    },
+    {
+      "point": "core.dialler",
+      "id": "twilio-dialler",
+      "label": "Twilio",
+      "serverOnly": true,
+      "import": "./lib/dialler",
+      "component": "twilioDialler"
     }
   ],
   "teardown": [

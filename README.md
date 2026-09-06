@@ -17,6 +17,12 @@ Provides:
   module, which answers with TwiML that dials your chosen number. Each number can also take
   a voicemail when nobody answers, and keep opening hours - outside them the phone never
   rings, and callers can hear a greeting of their own instead of the usual one.
+- **Click-to-dial, here and everywhere else** - each number's tab can ring somebody:
+  Twilio calls you first, reads out who you are about to ring, and connects the two once
+  you press a key, with the site's number as the caller ID rather than your mobile. The
+  same call is offered to the rest of the site through core's `core.dialler` seam, so
+  anything with a customer's number on screen - the Unified Inbox, for one - can place it
+  without knowing that Twilio exists.
 - **SMS login codes** - admins and members can verify a mobile number and receive their
   two-step sign-in codes by text message instead of email, delivered through the core SMS
   provider hook. If Twilio ever becomes unavailable, codes silently fall back to email.
