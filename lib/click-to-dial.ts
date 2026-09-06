@@ -11,14 +11,22 @@
 // customer. Two copies of this would be two sets of caller-ID checks, and only
 // one of them would get fixed.
 //
+// THE TWO TYPED NUMBERS ARE READ THE WAY PEOPLE TYPE THEM. Everywhere else in
+// this module a phone number arrives from Twilio already in international form
+// and is checked strictly (normalisePhone in ./verification); these two come off
+// somebody's keyboard, where "020 8138 0512" is a whole number. Core's toE164
+// puts the site's dialling code on, and the strict shape is still what leaves
+// here - Twilio would refuse anything else.
+//
 // A REFUSAL IS A SENTENCE, NOT AN EXCEPTION. "That number is not on the
 // connected account" is something the person at the keyboard can act on, so it
 // comes back as a value. Only the genuinely exceptional - Twilio unreachable -
 // throws.
 import { getSiteUrl } from '@/lib/config/env'
+import { toE164 } from '@/lib/phone'
+import { siteDiallingCode } from '@/lib/phone.server'
 import { isTwilioConfigured, listIncomingNumbers, placeCall, escapeXml } from './twilio'
 import { resolveNumberRegion } from './numbers'
-import { normalisePhone } from './verification'
 
 export type DialRefusal =
   | 'not-configured'
@@ -33,8 +41,8 @@ export type ClickToDialResult =
 
 const REFUSALS: Record<DialRefusal, string> = {
   'not-configured': 'Twilio is not set up yet, so there is nothing to place the call with.',
-  'bad-to': 'The number to call must be in international format, e.g. +447700900123.',
-  'bad-call-me-at': 'Your own number must be in international format, e.g. +447700900123.',
+  'bad-to': 'That does not look like a number to call. Try it as 020 8138 0512, or in full as +44 20 8138 0512.',
+  'bad-call-me-at': 'Your own number does not look right. Try it as 07700 900123, or in full as +44 7700 900123.',
   'unknown-number': 'That number is not on the connected Twilio account.',
   'not-voice-capable': 'That number cannot make voice calls.',
 }
@@ -65,10 +73,12 @@ export async function placeClickToDial(input: {
 }): Promise<ClickToDialResult> {
   if (!isTwilioConfigured()) return refuse('not-configured')
 
-  const to = normalisePhone(input.to)
+  const diallingCode = await siteDiallingCode()
+
+  const to = toE164(input.to, diallingCode)
   if (!to) return refuse('bad-to')
 
-  const callMeAt = normalisePhone(input.callMeAt)
+  const callMeAt = toE164(input.callMeAt, diallingCode)
   if (!callMeAt) return refuse('bad-call-me-at')
 
   // The from number must be a voice-capable number on the connected account -
