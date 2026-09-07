@@ -8,9 +8,9 @@ import type {
   ConversationThread,
 } from '@/lib/conversations/types'
 import { getWhatsAppSender } from './whatsapp-config'
-import { isTwilioConfigured } from './twilio'
+import { isTwilioConfigured, type TwilioRegion } from './twilio'
 import {
-  listWhatsAppMessages,
+  listWhatsAppMessagesAcross,
   sendWhatsAppText,
   windowProblem,
   type WhatsAppMessage,
@@ -79,6 +79,10 @@ type Grouped = {
   /** When they last wrote to US. Decides whether a plain reply will be
    *  delivered at all, so it is carried rather than recomputed. */
   lastInboundAt: Date | null
+  /** The region this conversation was actually found in - where a reply has to
+   *  be posted and where its media lives. Not necessarily the region the site
+   *  has written down; see listWhatsAppMessagesAcross. */
+  region: TwilioRegion
 }
 
 function group(messages: WhatsAppMessage[], ours: string): Grouped[] {
@@ -102,6 +106,7 @@ function group(messages: WhatsAppMessage[], ours: string): Grouped[] {
       messages: list,
       lastAt: new Date(newest.dateSent || 0),
       lastInboundAt: lastInbound ? new Date(lastInbound.dateSent || 0) : null,
+      region: newest.region,
     })
   }
   return groups.sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime())
@@ -134,7 +139,7 @@ function toMessages(g: Grouped): ConversationMessage[] {
       // is and where it sat. A person downloading three photographs needs them
       // to be three different files more than they need them to be well named.
       filename: `whatsapp-${message.sid}-${index + 1}${extensionFor(media.contentType)}`,
-      url: `/api/m/twilio/admin/whatsapp/media/${encodeURIComponent(message.sid)}/${encodeURIComponent(media.sid)}`,
+      url: `/api/m/twilio/admin/whatsapp/media/${encodeURIComponent(message.sid)}/${encodeURIComponent(media.sid)}?region=${encodeURIComponent(message.region)}`,
       contentType: media.contentType,
     }))
     return {
@@ -183,7 +188,7 @@ async function collect(): Promise<Grouped[]> {
   const sender = await getWhatsAppSender()
   if (!sender) return []
   try {
-    const messages = await listWhatsAppMessages(sender.phoneNumber, sender.region, PER_PASS)
+    const messages = await listWhatsAppMessagesAcross(sender.phoneNumber, sender.regions, PER_PASS)
     return group(messages, sender.phoneNumber)
   } catch (err) {
     console.error('[twilio] could not read the WhatsApp messages:', err)
@@ -261,7 +266,9 @@ async function send(id: string, body: { text: string; authorUserId: string }): P
   const problem = windowProblem(found?.lastInboundAt ?? null)
   if (problem) throw new Error(problem)
 
-  await sendWhatsAppText(to, body.text, sender.phoneNumber, sender.region)
+  // Posted to the region the conversation was actually found in - the site's
+  // own setting is only right by luck when Twilio filed the sender elsewhere.
+  await sendWhatsAppText(to, body.text, sender.phoneNumber, found?.region ?? sender.region)
   forgetCachedWhatsApp()
 }
 

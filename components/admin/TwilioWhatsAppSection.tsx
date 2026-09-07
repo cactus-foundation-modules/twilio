@@ -38,6 +38,9 @@ type Message = {
   dateSent: string
   body: string
   media: Media[]
+  /** Which country WhatsApp filed this message in. Needed on the attachment
+   *  link: the file can only be fetched back from there. */
+  region: string
 }
 
 type WindowState = { phoneNumber: string; lastInboundAt: string; open: boolean }
@@ -154,15 +157,14 @@ function SetupCard() {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Those settings could not be read'))
   }, [])
 
+  // Choosing a number deliberately leaves the country alone. A number's calls
+  // and texts are handled where that number is routed; its WhatsApp is handled
+  // where WhatsApp registered the sender, and the two are routinely different
+  // countries on the same number. Copying the one onto the other looked helpful
+  // and quietly pointed the site at an empty list.
   function pick(value: string) {
     setChoice(value)
-    if (value !== OTHER) {
-      setSender(value)
-      // A site number's messages are processed where that number is routed, so
-      // choosing one settles the country too - one fewer thing to get wrong.
-      const match = config?.siteNumbers.find((n) => n.phoneNumber === value)
-      if (match) setRegion(match.region)
-    }
+    if (value !== OTHER) setSender(value)
   }
 
   async function save() {
@@ -269,8 +271,9 @@ function SetupCard() {
           ))}
         </select>
         <p style={{ ...mutedText, margin: 'var(--space-1) 0 0' }}>
-          The same country the number&apos;s calls and texts are handled in. Pick one of your own
-          numbers above and this fills itself in.
+          Where WhatsApp itself handles this number, which is often not the country its calls and
+          texts are handled in. Messages are looked for everywhere your account reaches, so this
+          only decides where the first message to somebody brand new is sent from.
         </p>
       </div>
 
@@ -677,7 +680,7 @@ function LogCard() {
                           {m.media.map((media, index) => (
                             <a
                               key={media.sid}
-                              href={`/api/m/twilio/admin/whatsapp/media/${encodeURIComponent(m.sid)}/${encodeURIComponent(media.sid)}`}
+                              href={`/api/m/twilio/admin/whatsapp/media/${encodeURIComponent(m.sid)}/${encodeURIComponent(media.sid)}?region=${encodeURIComponent(m.region)}`}
                               target="_blank"
                               rel="noreferrer"
                               style={{ fontSize: 'var(--text-xs)' }}

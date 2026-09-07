@@ -8,7 +8,7 @@
 // of one row is how a save on one tab quietly reverts the other tab; each
 // upsert below names its own columns and nothing else's.
 import { prisma } from '@/lib/db/prisma'
-import { getHomeRegion, isTwilioRegion, type TwilioRegion } from './twilio'
+import { getConfiguredRegions, getHomeRegion, isTwilioRegion, type TwilioRegion } from './twilio'
 import { isContentSid } from './whatsapp'
 import { normalisePhone } from './verification'
 
@@ -83,11 +83,23 @@ export function configProblem(config: WhatsAppConfig): string | null {
 
 /** The sender to actually send from, or null when WhatsApp is not ready. The
  *  single gate for offering WhatsApp anywhere - same shape and same job as
- *  getDefaultSmsNumber. */
-export async function getWhatsAppSender(): Promise<{ phoneNumber: string; region: TwilioRegion } | null> {
+ *  getDefaultSmsNumber.
+ *
+ *  `region` is what the site has WRITTEN DOWN and is only a fallback. Twilio
+ *  files a WhatsApp sender's messages in the region the SENDER was registered
+ *  in, which is not moved by where the same phone number's calls and texts are
+ *  routed, so `regions` - every region this site holds a token for, the stored
+ *  one first - is what a read should actually sweep. */
+export async function getWhatsAppSender(): Promise<
+  { phoneNumber: string; region: TwilioRegion; regions: TwilioRegion[] } | null
+> {
   const config = await getWhatsAppConfig()
   if (!config.enabled || !config.sender) return null
-  return { phoneNumber: config.sender, region: config.region }
+  const configured = getConfiguredRegions()
+  const regions = configured.includes(config.region)
+    ? [config.region, ...configured.filter((r) => r !== config.region)]
+    : configured
+  return { phoneNumber: config.sender, region: config.region, regions }
 }
 
 // ---------------------------------------------------------------------------

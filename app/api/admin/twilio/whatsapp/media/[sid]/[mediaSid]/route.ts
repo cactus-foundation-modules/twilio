@@ -4,19 +4,20 @@
 //
 // Twilio's media URLs sit behind the account's basic auth, which is why this is
 // a proxy rather than a link. Both SID shapes are checked before either goes
-// near a URL, and the region comes from the WhatsApp sender's own setting -
-// media lives where its message was processed, and asking the wrong region
-// reads as "not found".
+// near a URL, and the region is named by whoever built the link - media lives in
+// the region its message was FOUND in, and asking the wrong region reads as
+// "not found". The site's own WhatsApp setting is the fallback for a link built
+// before regions were carried, not the answer.
 import { NextResponse } from 'next/server'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
-import { isTwilioConfigured } from '@/modules/twilio/lib/twilio'
+import { isTwilioConfigured, isTwilioRegion } from '@/modules/twilio/lib/twilio'
 import { fetchMessageMedia, isMediaSid, isMessageSid } from '@/modules/twilio/lib/whatsapp'
 import { getWhatsAppConfig } from '@/modules/twilio/lib/whatsapp-config'
 
 export async function GET(
-  _request: Request,
+  request: Request,
   ctx: { params: Promise<{ sid: string; mediaSid: string }> },
 ) {
   const user = await getSessionFromCookie()
@@ -30,7 +31,8 @@ export async function GET(
   if (!isMediaSid(mediaSid)) return errorResponse('Invalid media id')
 
   try {
-    const { region } = await getWhatsAppConfig()
+    const asked = new URL(request.url).searchParams.get('region') ?? ''
+    const region = isTwilioRegion(asked) ? asked : (await getWhatsAppConfig()).region
     const upstream = await fetchMessageMedia(sid, mediaSid, region)
     if (!upstream.ok || !upstream.body) {
       return errorResponse(

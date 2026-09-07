@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   WHATSAPP_WINDOW_MS,
+  regionForParty,
+  type WhatsAppMessage,
   fromWhatsAppAddress,
   isContentSid,
   isMediaSid,
@@ -95,5 +97,51 @@ describe('Twilio id shapes', () => {
   it('refuses anything with a path in it', () => {
     expect(isMessageSid('../../secrets')).toBe(false)
     expect(isMediaSid('ME' + '0'.repeat(30) + '/..')).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Regions
+//
+// The defect these guard: a WhatsApp sender is registered against the ACCOUNT,
+// in whichever region Twilio put it, and that is NOT moved by where the same
+// phone number's calls and texts are routed. Reading the wrong region returns
+// an empty list rather than an error, so the site said "nobody has ever written
+// to you" about a customer whose message was sitting in the next region along -
+// and refused every reply to them.
+// ---------------------------------------------------------------------------
+
+describe('which region to send from', () => {
+  const message = (over: Partial<WhatsAppMessage>): WhatsAppMessage => ({
+    sid: 'MM' + '0'.repeat(32),
+    from: '+447700900123',
+    to: '+442081380512',
+    direction: 'inbound',
+    status: 'received',
+    dateSent: '2026-09-06T12:00:00Z',
+    body: 'Hi',
+    media: [],
+    region: 'us1',
+    ...over,
+  })
+
+  it('follows the newest message involving that person', () => {
+    const messages = [
+      message({ sid: 'MM' + '1'.repeat(32), from: '+447700900999', region: 'ie1' }),
+      message({ sid: 'MM' + '2'.repeat(32), from: '+447700900123', region: 'us1' }),
+    ]
+    expect(regionForParty(messages, '+447700900123', 'ie1')).toBe('us1')
+  })
+
+  // Somebody brand new has no messages of their own, but the sender's other
+  // traffic still says where Twilio files this sender - which is better
+  // evidence than what the site has written down.
+  it('falls back to where the sender is filing everything else', () => {
+    const messages = [message({ from: '+447700900999', region: 'us1' })]
+    expect(regionForParty(messages, '+447700900123', 'ie1')).toBe('us1')
+  })
+
+  it('uses the setting only when nothing has ever been said', () => {
+    expect(regionForParty([], '+447700900123', 'ie1')).toBe('ie1')
   })
 })

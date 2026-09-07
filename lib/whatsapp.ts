@@ -26,6 +26,15 @@
 //   content is streamed through this site rather than linked, because Twilio's
 //   media URLs are behind the account credentials.
 //
+//   REGIONS ARE NOT THE NUMBER'S. A phone number's calls and texts are processed
+//   in the region it is ROUTED to, and that routing does not move WhatsApp: a
+//   WhatsApp sender belongs to the account, and its messages are filed in the
+//   region Twilio registered the sender in - usually the account's home region,
+//   whatever the same number's telephony does. Asking the wrong region returns
+//   an empty list rather than an error, which reads on screen as "nobody has
+//   ever written to you", so every read here sweeps EVERY region the site holds
+//   a token for and each message carries the region it was found in.
+//
 // SERVER ONLY: carries the account credentials by way of lib/twilio.ts.
 import {
   authHeader,
@@ -192,6 +201,10 @@ export type WhatsAppMessage = {
   dateSent: string
   body: string
   media: WhatsAppMedia[]
+  /** Which region this message was found in. Carried rather than assumed: its
+   *  media can only be fetched from here, and a reply can only be sent from
+   *  here, and neither is necessarily the region the site has written down. */
+  region: TwilioRegion
 }
 
 type RawMessage = {
@@ -257,6 +270,7 @@ export async function listWhatsAppMessages(
       dateSent: m.date_sent ?? m.date_created ?? '',
       body: m.body ?? '',
       media: [] as WhatsAppMedia[],
+      region,
       numMedia: m.num_media ? parseInt(m.num_media, 10) || 0 : 0,
     }))
     .sort((a, b) => Date.parse(b.dateSent || '0') - Date.parse(a.dateSent || '0'))
@@ -278,6 +292,78 @@ export async function listWhatsAppMessages(
   )
 
   return messages.map(({ numMedia: _numMedia, ...message }) => message)
+}
+
+/**
+ * The same listing, swept across every region the site holds a token for.
+ *
+ * This is what callers should use. A WhatsApp sender is registered against the
+ * ACCOUNT, in whichever region Twilio put it, and that has nothing to do with
+ * the inbound processing region of the identically-numbered phone line: a
+ * number whose calls are handled in Ireland can perfectly well have its
+ * WhatsApp filed in the United States. Twilio does not complain about the
+ * mismatch - the wrong region simply answers with an empty list, which reads on
+ * screen as a customer who has never been in touch and quietly blocks every
+ * reply to them.
+ *
+ * A region that fails is logged and skipped, because one region being unwell
+ * should not hide the conversations held in the other. All of them failing
+ * throws, because an empty list would be a lie.
+ */
+export async function listWhatsAppMessagesAcross(
+  sender: string,
+  regions: readonly TwilioRegion[],
+  limit = 50,
+): Promise<WhatsAppMessage[]> {
+  const wanted = regions.length > 0 ? [...regions] : [getHomeRegion()]
+  const settled = await Promise.allSettled(
+    wanted.map((region) => listWhatsAppMessages(sender, region, limit)),
+  )
+
+  const found: WhatsAppMessage[] = []
+  const failures: unknown[] = []
+  settled.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      found.push(...result.value)
+      return
+    }
+    failures.push(result.reason)
+    console.error(`[twilio] could not read the WhatsApp messages in ${wanted[index]}:`, result.reason)
+  })
+
+  if (failures.length === wanted.length) {
+    throw failures[0] instanceof Error
+      ? failures[0]
+      : new Error('The WhatsApp messages could not be read')
+  }
+
+  // One message cannot be in two regions, so a duplicate SID would be Twilio
+  // answering twice; keeping the first is as good as keeping either.
+  const bySid = new Map<string, WhatsAppMessage>()
+  for (const message of found) if (!bySid.has(message.sid)) bySid.set(message.sid, message)
+
+  return [...bySid.values()]
+    .sort((a, b) => Date.parse(b.dateSent || '0') - Date.parse(a.dateSent || '0'))
+    .slice(0, limit)
+}
+
+/**
+ * Which region to send from, worked out from what has already been said.
+ *
+ * The newest message involving that person is the only reliable evidence of
+ * where this sender's WhatsApp lives, because it is where Twilio actually filed
+ * one. With nothing to go on - a person who has never been in touch, on a site
+ * that has never sent anything - the site's own setting is used, which is the
+ * best guess available and the one an owner can correct.
+ */
+export function regionForParty(
+  messages: readonly WhatsAppMessage[],
+  party: string,
+  fallback: TwilioRegion,
+): TwilioRegion {
+  const wanted = party.trim()
+  const theirs = messages.find((m) => m.from === wanted || m.to === wanted)
+  return theirs?.region ?? messages[0]?.region ?? fallback
 }
 
 /**

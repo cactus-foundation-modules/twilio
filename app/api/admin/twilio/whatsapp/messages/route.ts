@@ -20,7 +20,8 @@ import {
 } from '@/modules/twilio/lib/whatsapp-config'
 import {
   isWindowOpen,
-  listWhatsAppMessages,
+  listWhatsAppMessagesAcross,
+  regionForParty,
   sendWhatsAppTemplate,
   sendWhatsAppText,
   windowProblem,
@@ -57,7 +58,7 @@ export async function GET() {
   if (!sender) return NextResponse.json({ ready: false, sender: null, messages: [] })
 
   try {
-    const messages = await listWhatsAppMessages(sender.phoneNumber, sender.region, PAGE)
+    const messages = await listWhatsAppMessagesAcross(sender.phoneNumber, sender.regions, PAGE)
 
     // When each person last wrote, so the screen can say who may be written
     // back to in plain text and who needs a template. Worked out from the same
@@ -106,6 +107,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Read first, whichever kind of message this is. It says who has written
+    // and when - and, just as importantly, which region Twilio has actually
+    // filed this sender's WhatsApp in, which is not always the one the site has
+    // written down and is the only region a send will be accepted in.
+    const recent = await listWhatsAppMessagesAcross(sender.phoneNumber, sender.regions, PAGE)
+    const region = regionForParty(recent, to, sender.region)
+
     if (contentSid) {
       // Only templates this site has registered may be sent. A Content SID
       // arriving from the browser is a value somebody typed, and sending an
@@ -120,7 +128,7 @@ export async function POST(request: NextRequest) {
             : `That template needs exactly ${template.variableCount} values filling in`,
         )
       }
-      const sid = await sendWhatsAppTemplate(to, contentSid, variables, sender.phoneNumber, sender.region)
+      const sid = await sendWhatsAppTemplate(to, contentSid, variables, sender.phoneNumber, region)
       forgetCachedWhatsApp()
       return NextResponse.json({ ok: true, sid, from: sender.phoneNumber })
     }
@@ -129,7 +137,6 @@ export async function POST(request: NextRequest) {
     // to Twilio, which accepts an out-of-window message and lets Meta drop it -
     // so without this the screen would say sent and the customer would never
     // see it.
-    const recent = await listWhatsAppMessages(sender.phoneNumber, sender.region, 100)
     const lastInbound = recent
       .filter((m) => m.direction === 'inbound' && m.from === to)
       .map((m) => new Date(m.dateSent || 0))
@@ -137,7 +144,7 @@ export async function POST(request: NextRequest) {
     const problem = windowProblem(lastInbound)
     if (problem) return errorResponse(problem)
 
-    const sid = await sendWhatsAppText(to, text!, sender.phoneNumber, sender.region)
+    const sid = await sendWhatsAppText(to, text!, sender.phoneNumber, region)
     forgetCachedWhatsApp()
     return NextResponse.json({ ok: true, sid, from: sender.phoneNumber })
   } catch (err) {
