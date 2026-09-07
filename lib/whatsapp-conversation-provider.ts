@@ -286,7 +286,31 @@ export const whatsappConversationProvider: ConversationProvider = {
   // its own retention, and an inbound WhatsApp message never passes through a
   // webhook of ours where it could be refused. Claiming either would put a
   // button on a screen that cannot do what it says.
-  capabilities: { reply: true, markRead: false, byIdentity: true, delete: false, block: false },
+  capabilities: {
+    reply: true,
+    markRead: false,
+    byIdentity: true,
+    delete: false,
+    block: false,
+    // WhatsApp's own way of saying it, declared here because this is the only
+    // file that has any business knowing it. Meta reads a marker on each side
+    // of the words: *bold*, _italic_, ~strikethrough~ and ```monospace```.
+    // Whoever is writing the message decides which of them to offer; all this
+    // says is what will actually arrive looking like anything.
+    //
+    // Nothing else is on the list on purpose. A colour, a heading and a link
+    // with words of its own do not exist in WhatsApp at all - a link is a bare
+    // address, which needs no marker - so a channel claiming them would have
+    // them silently thrown away at Meta's end.
+    //
+    // Monospace is the one deliberate omission from what WhatsApp CAN do. It
+    // writes it as ```like this```, but no writing box on this platform has a
+    // way to produce it, and a style declared here is a button offered to
+    // whoever is replying - so claiming it would put a button on the strip
+    // that does nothing at all. It goes on the list the day something can
+    // write it.
+    textStyles: { bold: '*', italic: '_', strikethrough: '~' },
+  },
   list,
   thread,
   send,
