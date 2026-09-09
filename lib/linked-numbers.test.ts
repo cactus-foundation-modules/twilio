@@ -27,6 +27,7 @@ function rule(overrides: Partial<Rule>): Rule {
     showCalledNumber: false,
     voicemailEnabled: false,
     ringTimeout: 20,
+    forwardAttempts: 1,
     voicemailGreeting: '',
     closedVoicemailGreeting: '',
     voicemailVoice: '',
@@ -35,6 +36,7 @@ function rule(overrides: Partial<Rule>): Rule {
     missedCallSmsEnabled: false,
     missedCallSmsMessage: '',
     transcribeVoicemail: false,
+    transcribeCalls: false,
     anonymousCallers: 'allow',
     greetingAudioMediaId: '',
     voicemailAudioMediaId: '',
@@ -68,6 +70,7 @@ const leader = rule({
   showCalledNumber: true,
   voicemailEnabled: true,
   ringTimeout: 35,
+  forwardAttempts: 3,
   voicemailGreeting: 'Leave a message.',
   closedVoicemailGreeting: 'We are closed.',
   voicemailVoice: 'Polly.Brian',
@@ -76,6 +79,7 @@ const leader = rule({
   missedCallSmsEnabled: true,
   missedCallSmsMessage: 'Sorry we missed you.',
   transcribeVoicemail: true,
+  transcribeCalls: true,
   anonymousCallers: 'voicemail',
   greetingAudioMediaId: 'media-greeting',
   voicemailAudioMediaId: 'media-voicemail',
@@ -94,6 +98,7 @@ describe('linkedRule', () => {
     expect(linked.showCalledNumber).toBe(true)
     expect(linked.voicemailEnabled).toBe(true)
     expect(linked.ringTimeout).toBe(35)
+    expect(linked.forwardAttempts).toBe(3)
     expect(linked.voicemailGreeting).toBe('Leave a message.')
     expect(linked.closedVoicemailGreeting).toBe('We are closed.')
     expect(linked.voicemailVoice).toBe('Polly.Brian')
@@ -102,6 +107,7 @@ describe('linkedRule', () => {
     expect(linked.missedCallSmsEnabled).toBe(true)
     expect(linked.missedCallSmsMessage).toBe('Sorry we missed you.')
     expect(linked.transcribeVoicemail).toBe(true)
+    expect(linked.transcribeCalls).toBe(true)
     expect(linked.anonymousCallers).toBe('voicemail')
     expect(linked.greetingAudioMediaId).toBe('media-greeting')
     expect(linked.voicemailAudioMediaId).toBe('media-voicemail')

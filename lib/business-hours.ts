@@ -25,6 +25,13 @@ export type BusinessHours = BusinessHoursDay[]
 export const MIN_RING_TIMEOUT = 5
 export const MAX_RING_TIMEOUT = 120
 
+// How many times one forwarding number may be rung before the call moves on.
+// The point of ringing twice is a short timeout that cuts the call off before
+// the handset offers its own voicemail, without that costing the person their
+// only chance to answer; past a handful of tries the caller has hung up anyway.
+export const MIN_FORWARD_ATTEMPTS = 1
+export const MAX_FORWARD_ATTEMPTS = 5
+
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
 
 export function isValidTime(value: string): boolean {

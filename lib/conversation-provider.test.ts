@@ -16,6 +16,8 @@ const listCallsForNumber = vi.hoisted(() => vi.fn())
 const listMessagesForNumber = vi.hoisted(() => vi.fn())
 const recentVoicemails = vi.hoisted(() => vi.fn())
 const deleteVoicemail = vi.hoisted(() => vi.fn())
+const filterVoicemailSids = vi.hoisted(() => vi.fn())
+const callTranscriptsForSids = vi.hoisted(() => vi.fn())
 const deleteRecording = vi.hoisted(() => vi.fn())
 const getHomeRegion = vi.hoisted(() => vi.fn())
 const resolveNumberRegion = vi.hoisted(() => vi.fn())
@@ -29,7 +31,8 @@ vi.mock('./numbers', () => ({ getSiteNumbers, sendSiteSms, resolveNumberRegion }
 vi.mock('./twilio', () => ({
   isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion,
 }))
-vi.mock('./voicemail-log', () => ({ recentVoicemails, deleteVoicemail }))
+vi.mock('./voicemail-log', () => ({ recentVoicemails, deleteVoicemail, filterVoicemailSids }))
+vi.mock('./call-transcripts', () => ({ callTranscriptsForSids }))
 vi.mock('./blocked-numbers', () => ({
   NotBlockableError, blockNumber, unblockNumber, isNumberBlocked,
 }))
@@ -76,6 +79,8 @@ beforeEach(() => {
   listMessagesForNumber.mockReset().mockResolvedValue([text])
   recentVoicemails.mockReset().mockResolvedValue([])
   deleteVoicemail.mockReset().mockResolvedValue(undefined)
+  filterVoicemailSids.mockReset().mockResolvedValue(new Set<string>())
+  callTranscriptsForSids.mockReset().mockResolvedValue(new Map())
   deleteRecording.mockReset().mockResolvedValue(undefined)
   getHomeRegion.mockReset().mockReturnValue('ie1')
   resolveNumberRegion.mockReset().mockResolvedValue('ie1')
@@ -150,6 +155,7 @@ describe('one conversation', () => {
         toNumber: '+441134960000',
         durationSeconds: 22,
         createdAt: new Date('2026-08-26T08:00:00Z'),
+        updatedAt: new Date('2026-08-26T08:04:00Z'),
         transcriptionStatus: 'completed',
         transcriptionText: 'Hello, it is Ada, could you ring me back',
       },
@@ -165,6 +171,136 @@ describe('one conversation', () => {
     expect(thread!.messages[0]!.attachments[0]!.url).toContain('/api/m/twilio/admin/recordings/RE1')
     expect(thread!.messages[0]!.attachments[0]!.url).toContain('number=%2B441134960000')
     expect(thread!.messages[1]!.text).toBe('Incoming call, 1 min 35 sec')
+  })
+
+  it('offers the recording of an answered call, the same way a voicemail is offered', async () => {
+    listCallsForNumber.mockResolvedValue([{ ...call, recordingSids: ['RE9'] }])
+    listMessagesForNumber.mockResolvedValue([])
+    const thread = await provider.thread('+447700900123')
+    const [message] = thread!.messages
+    expect(message!.attachments).toHaveLength(1)
+    expect(message!.attachments[0]).toMatchObject({
+      filename: 'call-RE9.mp3',
+      contentType: 'audio/mpeg',
+    })
+    // The site's own number, not the caller's: it is what says which Twilio
+    // Region the recording is stored in.
+    expect(message!.attachments[0]!.url).toContain('number=%2B441134960000')
+  })
+
+  // A call that rang out into voicemail carries the voicemail's own recording
+  // on the call as well. Offered on both, it is one piece of audio pretending
+  // to be two things.
+  it('does not offer a voicemail recording a second time under the call', async () => {
+    filterVoicemailSids.mockResolvedValue(new Set(['RE1']))
+    listCallsForNumber.mockResolvedValue([
+      { ...call, status: 'no-answer', durationSeconds: 0, recordingSids: ['RE1'] },
+    ])
+    listMessagesForNumber.mockResolvedValue([])
+    const thread = await provider.thread('+447700900123')
+    expect(thread!.messages[0]!.attachments).toEqual([])
+  })
+
+  // A transcription lands minutes after the message, so a reader that copied
+  // the conversation in between holds a voicemail with no words in it. It is
+  // told the content moved without the conversation being made newer, which
+  // would put it back at the top of somebody's list for no reason.
+  it('says its content changed later than its newest message when one was typed up', async () => {
+    recentVoicemails.mockResolvedValue([
+      {
+        recordingSid: 'RE1',
+        callSid: 'CA0',
+        fromNumber: '+447700900123',
+        toNumber: '+441134960000',
+        durationSeconds: 22,
+        createdAt: new Date('2026-08-26T08:00:00Z'),
+        updatedAt: new Date('2026-08-26T08:04:00Z'),
+        transcriptionStatus: 'completed',
+        transcriptionText: 'Hello, it is Ada',
+      },
+    ])
+    listCallsForNumber.mockResolvedValue([])
+    listMessagesForNumber.mockResolvedValue([])
+    const page = await provider.list({ limit: 25 })
+    expect(page.items[0]!.lastMessageAt).toEqual(new Date('2026-08-26T08:00:00Z'))
+    expect(page.items[0]!.contentAt).toEqual(new Date('2026-08-26T08:04:00Z'))
+  })
+
+  // And that is only worth reporting if it is then acted on: asked for what has
+  // happened since the message itself, the conversation must still come back.
+  it('still lists a conversation whose only change since is the typing up', async () => {
+    recentVoicemails.mockResolvedValue([
+      {
+        recordingSid: 'RE1',
+        callSid: 'CA0',
+        fromNumber: '+447700900123',
+        toNumber: '+441134960000',
+        durationSeconds: 22,
+        createdAt: new Date('2026-08-26T08:00:00Z'),
+        updatedAt: new Date('2026-08-26T08:04:00Z'),
+        transcriptionStatus: 'completed',
+        transcriptionText: 'Hello, it is Ada',
+      },
+    ])
+    listCallsForNumber.mockResolvedValue([])
+    listMessagesForNumber.mockResolvedValue([])
+    const page = await provider.list({ limit: 25, since: new Date('2026-08-26T08:00:00Z') })
+    expect(page.items.map((i) => i.id)).toEqual(['+447700900123'])
+  })
+
+  describe('a recorded call that was typed up', () => {
+    const typedUp = new Map([
+      ['RE9', {
+        recordingSid: 'RE9',
+        callSid: 'CA1',
+        siteNumber: '+441134960000',
+        transcriptSid: 'GT1',
+        status: 'completed',
+        text: 'Hello, I am after a desk. Certainly, which size?',
+        createdAt: new Date('2026-08-27T09:02:00Z'),
+        updatedAt: new Date('2026-08-27T09:06:00Z'),
+      }],
+    ])
+
+    beforeEach(() => {
+      listCallsForNumber.mockResolvedValue([{ ...call, recordingSids: ['RE9'] }])
+      listMessagesForNumber.mockResolvedValue([])
+      callTranscriptsForSids.mockResolvedValue(typedUp)
+    })
+
+    // The description stays. "3 min 58 sec" and "Missed call" are facts about
+    // the call that no transcript states, and a wall of speech with nothing
+    // above it does not say a call happened at all.
+    it('reads the words under the line saying the call happened', async () => {
+      const thread = await provider.thread('+447700900123')
+      const text = thread!.messages[0]!.text
+      expect(text.startsWith('Incoming call, 1 min 35 sec')).toBe(true)
+      expect(text).toContain('after a desk')
+    })
+
+    it('still offers the recording beside the words', async () => {
+      const thread = await provider.thread('+447700900123')
+      expect(thread!.messages[0]!.attachments).toHaveLength(1)
+    })
+
+    // Same story as a voicemail's: the words arrive minutes after the call, so
+    // anything holding a copy has to be told the content moved on without the
+    // conversation itself becoming any newer.
+    it('says the content changed when the transcript landed', async () => {
+      const page = await provider.list({ limit: 25 })
+      expect(page.items[0]!.lastMessageAt).toEqual(new Date('2026-08-27T09:00:00Z'))
+      expect(page.items[0]!.contentAt).toEqual(new Date('2026-08-27T09:06:00Z'))
+    })
+
+    // A transcript Twilio gave up on must not put an empty paragraph under the
+    // call, which reads as a recorded silence.
+    it('ignores a transcript that failed', async () => {
+      callTranscriptsForSids.mockResolvedValue(
+        new Map([['RE9', { ...typedUp.get('RE9')!, status: 'failed', text: '' }]]),
+      )
+      const thread = await provider.thread('+447700900123')
+      expect(thread!.messages[0]!.text).toBe('Incoming call, 1 min 35 sec')
+    })
   })
 
   it('says a missed call was missed rather than pretending it was a chat', async () => {

@@ -9,7 +9,7 @@ import { getRuleForNumber, isRuleOpenNow } from '@/modules/twilio/lib/forwarding
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { greetingAudioUrl } from '@/modules/twilio/lib/greeting-audio'
 import { voiceForRegion } from '@/modules/twilio/lib/voices'
-import { voicemailTwiml, voicemailUrl } from '@/modules/twilio/lib/voicemail'
+import { dialActionUrl, transcriptionDialAttrs, voicemailTwiml } from '@/modules/twilio/lib/voicemail'
 import { getTwilioSettings } from '@/modules/twilio/lib/settings'
 import { isNumberBlocked } from '@/modules/twilio/lib/blocked-numbers'
 
@@ -96,26 +96,34 @@ export async function POST(request: NextRequest) {
     greeting = `<Say${voiceAttr}>${escapeXml(rule.greetingMessage)}</Say>`
   }
   const recordAttr = rule.recordCalls ? ' record="record-from-answer-dual"' : ''
+  // Only on a number whose owner asked for its calls to be typed up. The site
+  // number is the one that was DIALLED, which is what the callback needs to
+  // find the rule and the Region again.
+  const transcribeAttrs = transcriptionDialAttrs(rule, called)
   // Optionally present the called Twilio number as caller ID on the
   // forwarded leg (allowed - the account owns it). Same E.164 shape as
   // forwardTo, so no XML escaping needed either.
   const callerIdAttr = rule.showCalledNumber && E164.test(called) ? ` callerId="${called}"` : ''
   // The dial gets a ring limit and an action URL whenever there is anything to
-  // do after an unanswered ring: voicemail to take, a second number to try, an
-  // auto-text or email alert to send. Twilio requests the URL when the dial
-  // finishes and the voicemail route decides what happens next. With none of
-  // those, the dial keeps Twilio's own default timeout and no action.
+  // do after an unanswered ring: another go at the same number, voicemail to
+  // take, a second number to try, an auto-text or email alert to send. Twilio
+  // requests the URL when the dial finishes and the voicemail route decides what
+  // happens next. With none of those, the dial keeps Twilio's own default
+  // timeout and no action.
   const settings = await getTwilioSettings()
   const needsDialAction =
     rule.voicemailEnabled ||
+    rule.forwardAttempts > 1 ||
     E164.test(rule.forwardToSecond) ||
     rule.missedCallSmsEnabled ||
     (settings.notifyMissedCallEmail && settings.notifyEmail !== '')
+  // This is the first ring of the first number, which is what dialActionUrl(1, 1)
+  // spells out - it is the plain voicemail webhook URL, markers and all omitted.
   const actionAttrs = needsDialAction
-    ? ` timeout="${rule.ringTimeout}" action="${escapeXml(voicemailUrl())}" method="POST"`
+    ? ` timeout="${rule.ringTimeout}" action="${escapeXml(dialActionUrl(1, 1))}" method="POST"`
     : ''
 
   return twiml(
-    `${greeting}<Dial${recordAttr}${callerIdAttr}${actionAttrs}>${rule.forwardTo}</Dial>`
+    `${greeting}<Dial${recordAttr}${transcribeAttrs}${callerIdAttr}${actionAttrs}>${rule.forwardTo}</Dial>`
   )
 }

@@ -20,6 +20,16 @@ export type VoicemailRow = {
   createdAt: Date
 }
 
+/** A voicemail plus the state of its transcription, and when that last moved. */
+export type VoicemailWithTranscription = VoicemailRow & {
+  transcriptionStatus: string
+  transcriptionText: string
+  /** When anything about the row last changed - a transcription arriving, days
+   *  after nothing. Readers on a schedule use it to notice a message they have
+   *  already copied has since learned its own words. */
+  updatedAt: Date
+}
+
 // A voicemail's dedupe key is its recording SID, so each message raises its own
 // notification and reading one does not hide the next. Twilio only issues a
 // recording SID once, which also makes a repeated callback harmless.
@@ -74,7 +84,8 @@ export async function recordTranscription(input: {
   const text = status === 'completed' ? input.text : ''
   await prisma.$executeRaw`
     UPDATE "tw_voicemails"
-    SET "transcription_status" = ${status}, "transcription_text" = ${text}
+    SET "transcription_status" = ${status}, "transcription_text" = ${text},
+        "updated_at" = CURRENT_TIMESTAMP
     WHERE "recording_sid" = ${input.recordingSid}
   `
 }
@@ -117,13 +128,10 @@ export async function filterVoicemailSids(recordingSids: string[]): Promise<Set<
 // Recent voicemail messages, newest first. The call log asks about the
 // recordings on one page of calls; this asks the other way round, for anything
 // that wants the messages themselves.
-export async function recentVoicemails(limit = 100): Promise<Array<VoicemailRow & {
-  transcriptionStatus: string
-  transcriptionText: string
-}>> {
+export async function recentVoicemails(limit = 100): Promise<VoicemailWithTranscription[]> {
   const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
     SELECT "recording_sid", "call_sid", "from_number", "to_number", "duration_seconds",
-           "created_at", "transcription_status", "transcription_text"
+           "created_at", "updated_at", "transcription_status", "transcription_text"
       FROM "tw_voicemails"
      ORDER BY "created_at" DESC
      LIMIT ${Math.max(1, Math.min(500, limit))}
@@ -135,6 +143,7 @@ export async function recentVoicemails(limit = 100): Promise<Array<VoicemailRow 
     toNumber: (r.to_number as string) ?? '',
     durationSeconds: Number(r.duration_seconds ?? 0),
     createdAt: r.created_at as Date,
+    updatedAt: (r.updated_at as Date) ?? (r.created_at as Date),
     transcriptionStatus: (r.transcription_status as string) ?? '',
     transcriptionText: (r.transcription_text as string) ?? '',
   }))

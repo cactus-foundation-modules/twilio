@@ -32,6 +32,13 @@ export type ForwardingRule = {
   voicemailEnabled: boolean
   /** Seconds the forward-to number rings before voicemail takes the call. */
   ringTimeout: number
+  /**
+   * How many times each forwarding number is rung before the call moves on.
+   * 1 = ring once, the way forwarding has always worked. Higher values exist
+   * so ringTimeout can be set short enough to beat the receiving handset's own
+   * voicemail without that costing the person their only chance to answer.
+   */
+  forwardAttempts: number
   voicemailGreeting: string
   /** Said instead of voicemailGreeting outside opening hours. Empty = say the usual one. */
   closedVoicemailGreeting: string
@@ -46,6 +53,12 @@ export type ForwardingRule = {
   missedCallSmsMessage: string
   /** Ask Twilio to transcribe voicemail messages into the call log. */
   transcribeVoicemail: boolean
+  /**
+   * Have Voice Intelligence type up recorded calls on this number. Only does
+   * anything alongside recordCalls - there is nothing to read back otherwise -
+   * and it bills by the minute, which is why it is off until asked for.
+   */
+  transcribeCalls: boolean
   anonymousCallers: AnonymousCallerMode
   /**
    * Core media library ids of uploaded audio, played with <Play> instead of
@@ -66,9 +79,10 @@ export type ForwardingRule = {
 const RULE_COLUMNS = `
     id, phone_sid, phone_number, forward_to, forward_to_second, enabled,
     greeting_message, greeting_voice, record_calls, show_called_number,
-    voicemail_enabled, ring_timeout, voicemail_greeting,
+    voicemail_enabled, ring_timeout, forward_attempts, voicemail_greeting,
     closed_voicemail_greeting, voicemail_voice, business_hours, holiday_dates,
     missed_call_sms_enabled, missed_call_sms_message, transcribe_voicemail,
+    transcribe_calls,
     anonymous_callers, greeting_audio_media_id, voicemail_audio_media_id,
     closed_voicemail_audio_media_id, follows_phone_sid
 `
@@ -88,6 +102,7 @@ function mapRow(r: Record<string, unknown>): ForwardingRule {
     showCalledNumber: r.show_called_number as boolean,
     voicemailEnabled: r.voicemail_enabled as boolean,
     ringTimeout: Number(r.ring_timeout),
+    forwardAttempts: Number(r.forward_attempts),
     voicemailGreeting: r.voicemail_greeting as string,
     closedVoicemailGreeting: r.closed_voicemail_greeting as string,
     voicemailVoice: r.voicemail_voice as string,
@@ -99,6 +114,7 @@ function mapRow(r: Record<string, unknown>): ForwardingRule {
     missedCallSmsEnabled: r.missed_call_sms_enabled as boolean,
     missedCallSmsMessage: r.missed_call_sms_message as string,
     transcribeVoicemail: r.transcribe_voicemail as boolean,
+    transcribeCalls: r.transcribe_calls as boolean,
     // Same lenient read: an unknown stored mode behaves like the default
     // rather than dropping calls.
     anonymousCallers: isAnonymousCallerMode(anonymous) ? anonymous : 'allow',
@@ -223,6 +239,7 @@ export async function upsertForwardingRule(input: {
   showCalledNumber: boolean
   voicemailEnabled: boolean
   ringTimeout: number
+  forwardAttempts: number
   voicemailGreeting: string
   closedVoicemailGreeting: string
   voicemailVoice: string
@@ -231,6 +248,7 @@ export async function upsertForwardingRule(input: {
   missedCallSmsEnabled: boolean
   missedCallSmsMessage: string
   transcribeVoicemail: boolean
+  transcribeCalls: boolean
   anonymousCallers: AnonymousCallerMode
   greetingAudioMediaId: string
   voicemailAudioMediaId: string
@@ -245,20 +263,21 @@ export async function upsertForwardingRule(input: {
     INSERT INTO "tw_forwarding_rules"
       (phone_sid, phone_number, forward_to, forward_to_second, enabled,
        greeting_message, greeting_voice, record_calls, show_called_number,
-       voicemail_enabled, ring_timeout, voicemail_greeting,
+       voicemail_enabled, ring_timeout, forward_attempts, voicemail_greeting,
        closed_voicemail_greeting, voicemail_voice, business_hours,
        holiday_dates, missed_call_sms_enabled, missed_call_sms_message,
-       transcribe_voicemail, anonymous_callers, greeting_audio_media_id,
+       transcribe_voicemail, transcribe_calls, anonymous_callers, greeting_audio_media_id,
        voicemail_audio_media_id, closed_voicemail_audio_media_id,
        follows_phone_sid, updated_at)
     VALUES (${input.phoneSid}, ${input.phoneNumber}, ${input.forwardTo},
             ${input.forwardToSecond}, ${input.enabled},
             ${input.greetingMessage}, ${input.greetingVoice}, ${input.recordCalls},
             ${input.showCalledNumber}, ${input.voicemailEnabled}, ${input.ringTimeout},
+            ${input.forwardAttempts},
             ${input.voicemailGreeting}, ${input.closedVoicemailGreeting},
             ${input.voicemailVoice}, ${businessHours}::jsonb, ${holidayDates}::jsonb,
             ${input.missedCallSmsEnabled}, ${input.missedCallSmsMessage},
-            ${input.transcribeVoicemail}, ${input.anonymousCallers},
+            ${input.transcribeVoicemail}, ${input.transcribeCalls}, ${input.anonymousCallers},
             ${input.greetingAudioMediaId}, ${input.voicemailAudioMediaId},
             ${input.closedVoicemailAudioMediaId}, ${input.followsPhoneSid},
             CURRENT_TIMESTAMP)
@@ -273,6 +292,7 @@ export async function upsertForwardingRule(input: {
       show_called_number = EXCLUDED.show_called_number,
       voicemail_enabled  = EXCLUDED.voicemail_enabled,
       ring_timeout       = EXCLUDED.ring_timeout,
+      forward_attempts   = EXCLUDED.forward_attempts,
       voicemail_greeting = EXCLUDED.voicemail_greeting,
       closed_voicemail_greeting = EXCLUDED.closed_voicemail_greeting,
       voicemail_voice    = EXCLUDED.voicemail_voice,
@@ -281,6 +301,7 @@ export async function upsertForwardingRule(input: {
       missed_call_sms_enabled = EXCLUDED.missed_call_sms_enabled,
       missed_call_sms_message = EXCLUDED.missed_call_sms_message,
       transcribe_voicemail    = EXCLUDED.transcribe_voicemail,
+      transcribe_calls        = EXCLUDED.transcribe_calls,
       anonymous_callers       = EXCLUDED.anonymous_callers,
       greeting_audio_media_id         = EXCLUDED.greeting_audio_media_id,
       voicemail_audio_media_id        = EXCLUDED.voicemail_audio_media_id,

@@ -17,7 +17,14 @@ import { MAX_MISSED_CALL_SMS_LENGTH } from '@/modules/twilio/lib/notify'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
 import { isValidVoice } from '@/modules/twilio/lib/voices'
-import { parseBusinessHours, parseHolidayDates, MIN_RING_TIMEOUT, MAX_RING_TIMEOUT } from '@/modules/twilio/lib/business-hours'
+import {
+  parseBusinessHours,
+  parseHolidayDates,
+  MIN_RING_TIMEOUT,
+  MAX_RING_TIMEOUT,
+  MIN_FORWARD_ATTEMPTS,
+  MAX_FORWARD_ATTEMPTS,
+} from '@/modules/twilio/lib/business-hours'
 import { prisma } from '@/lib/db/prisma'
 
 const Body = z.object({
@@ -32,6 +39,14 @@ const Body = z.object({
   showCalledNumber: z.boolean().default(false),
   voicemailEnabled: z.boolean().default(false),
   ringTimeout: z.number().int().min(MIN_RING_TIMEOUT).max(MAX_RING_TIMEOUT).default(20),
+  // How many times each forwarding number is rung before the call moves on.
+  // Defaulted rather than required, so an older form post still saves.
+  forwardAttempts: z
+    .number()
+    .int()
+    .min(MIN_FORWARD_ATTEMPTS)
+    .max(MAX_FORWARD_ATTEMPTS)
+    .default(MIN_FORWARD_ATTEMPTS),
   voicemailGreeting: z.string().max(500).default(''),
   closedVoicemailGreeting: z.string().max(500).default(''),
   voicemailVoice: z.string().default(''),
@@ -40,6 +55,9 @@ const Body = z.object({
   missedCallSmsEnabled: z.boolean().default(false),
   missedCallSmsMessage: z.string().max(MAX_MISSED_CALL_SMS_LENGTH).default(''),
   transcribeVoicemail: z.boolean().default(false),
+  // Voice Intelligence bills by the minute, so this defaults OFF and an older
+  // form post - or a save from a page loaded before it existed - leaves it off.
+  transcribeCalls: z.boolean().default(false),
   anonymousCallers: z.string().default('allow'),
   greetingAudioMediaId: z.string().default(''),
   voicemailAudioMediaId: z.string().default(''),
@@ -106,7 +124,8 @@ export async function PUT(request: NextRequest) {
 
   const parsed = Body.safeParse(await request.json())
   if (!parsed.success) return errorResponse('Invalid input')
-  const { phoneSid, phoneNumber, enabled, recordCalls, showCalledNumber, voicemailEnabled, ringTimeout } = parsed.data
+  const { phoneSid, phoneNumber, enabled, recordCalls, showCalledNumber, voicemailEnabled, ringTimeout, forwardAttempts } =
+    parsed.data
 
   const greetingMessage = parsed.data.greetingMessage.trim()
   const greetingVoice = parsed.data.greetingVoice
@@ -137,7 +156,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const missedCallSmsMessage = parsed.data.missedCallSmsMessage.trim()
-  const { missedCallSmsEnabled, transcribeVoicemail } = parsed.data
+  const { missedCallSmsEnabled, transcribeVoicemail, transcribeCalls } = parsed.data
 
   // Same rule as forwardTo: a second number must be dialable to be worth
   // saving, but an invalid leftover with the field effectively off is dropped
@@ -229,6 +248,7 @@ export async function PUT(request: NextRequest) {
       showCalledNumber,
       voicemailEnabled,
       ringTimeout,
+      forwardAttempts,
       voicemailGreeting,
       closedVoicemailGreeting,
       voicemailVoice,
@@ -237,6 +257,7 @@ export async function PUT(request: NextRequest) {
       missedCallSmsEnabled,
       missedCallSmsMessage,
       transcribeVoicemail,
+      transcribeCalls,
       anonymousCallers,
       greetingAudioMediaId,
       voicemailAudioMediaId,

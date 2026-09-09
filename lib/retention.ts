@@ -51,5 +51,13 @@ export async function runRetentionSweep(now: Date = new Date()): Promise<Retenti
     DELETE FROM "tw_voicemails" WHERE "created_at" < ${cutoff}
   `
 
+  // And the words along with them. A retention period is somebody saying how
+  // long they are willing to keep a recording of a conversation; keeping a
+  // written-out copy of it after the audio has gone would be keeping the same
+  // thing in a more readable form, which is not what they asked for.
+  await prisma.$executeRaw`
+    DELETE FROM "tw_call_transcripts" WHERE "created_at" < ${cutoff}
+  `
+
   return result
 }

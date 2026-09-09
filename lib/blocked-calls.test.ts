@@ -27,6 +27,9 @@ vi.mock('@/modules/twilio/lib/voices', () => ({ voiceForRegion: (v: string) => v
 vi.mock('@/modules/twilio/lib/voicemail', () => ({
   voicemailTwiml: () => '<Say>Leave a message</Say>',
   voicemailUrl: () => 'https://example.test/vm',
+  dialActionUrl: (leg: number, attempt: number) =>
+    `https://example.test/vm${leg === 2 ? '?leg=2' : attempt > 1 ? `?attempt=${attempt}` : ''}`,
+  transcriptionDialAttrs: () => '',
 }))
 vi.mock('@/modules/twilio/lib/settings', () => ({ getTwilioSettings }))
 vi.mock('@/modules/twilio/lib/blocked-numbers', () => ({ isNumberBlocked }))
@@ -58,6 +61,7 @@ function openForwardingRule() {
     recordCalls: false,
     showCalledNumber: false,
     ringTimeout: 20,
+    forwardAttempts: 1,
     greetingMessage: '',
     greetingAudioMediaId: null,
     greetingVoice: '',

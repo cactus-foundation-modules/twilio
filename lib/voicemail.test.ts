@@ -1,10 +1,12 @@
 import { beforeAll, describe, it, expect } from 'vitest'
 import {
+  dialActionUrl,
   planVoicemailRequest,
   recordingSidFromUrl,
   voicemailGreetingFor,
   voicemailGreetingTwiml,
   voicemailTwiml,
+  voicemailUrl,
   MIN_VOICEMAIL_SECONDS,
 } from './voicemail'
 
@@ -58,7 +60,7 @@ describe('planVoicemailRequest', () => {
     it('tries the second number before voicemail when one is configured', () => {
       expect(
         planVoicemailRequest({ stage: null, dialCallStatus: 'no-answer' }, { hasSecondLeg: true })
-      ).toEqual({ action: 'dial-second' })
+      ).toEqual({ action: 'dial', leg: 2, attempt: 1 })
     })
 
     // The second leg's own action request carries the leg marker: there is no
@@ -90,6 +92,93 @@ describe('planVoicemailRequest', () => {
           { hasSecondLeg: true }
         )
       ).toEqual({ action: 'log-message', recordingSid: SID, durationSeconds: 12 })
+    })
+  })
+
+  // Ringing the same number again, which is how a ring timeout short enough to
+  // beat the handset's own voicemail stops costing the person their only chance
+  // to answer.
+  describe('ringing the same number more than once', () => {
+    it('rings the first number again until the attempts run out', () => {
+      const ctx = { hasSecondLeg: false, attemptsPerNumber: 3 }
+      expect(planVoicemailRequest({ stage: null, dialCallStatus: 'no-answer' }, ctx)).toEqual({
+        action: 'dial',
+        leg: 1,
+        attempt: 2,
+      })
+      expect(
+        planVoicemailRequest({ stage: null, attempt: '2', dialCallStatus: 'no-answer' }, ctx)
+      ).toEqual({ action: 'dial', leg: 1, attempt: 3 })
+      expect(
+        planVoicemailRequest({ stage: null, attempt: '3', dialCallStatus: 'no-answer' }, ctx)
+      ).toEqual({ action: 'take-message' })
+    })
+
+    it('gives the second number the same number of tries, then takes a message', () => {
+      const ctx = { hasSecondLeg: true, attemptsPerNumber: 2 }
+      expect(
+        planVoicemailRequest({ stage: null, attempt: '2', dialCallStatus: 'no-answer' }, ctx)
+      ).toEqual({ action: 'dial', leg: 2, attempt: 1 })
+      expect(
+        planVoicemailRequest({ stage: null, leg: '2', dialCallStatus: 'no-answer' }, ctx)
+      ).toEqual({ action: 'dial', leg: 2, attempt: 2 })
+      expect(
+        planVoicemailRequest(
+          { stage: null, leg: '2', attempt: '2', dialCallStatus: 'no-answer' },
+          ctx
+        )
+      ).toEqual({ action: 'take-message' })
+    })
+
+    it('stops the moment somebody picks up, however many tries were left', () => {
+      expect(
+        planVoicemailRequest(
+          { stage: null, attempt: '2', dialCallStatus: 'completed' },
+          { hasSecondLeg: true, attemptsPerNumber: 5 }
+        )
+      ).toEqual({ action: 'hangup' })
+    })
+
+    // The whole point of the attempt marker: without it every reply would look
+    // like the first try and the caller would be redialled forever.
+    it('never rings on past the configured number of tries', () => {
+      expect(
+        planVoicemailRequest(
+          { stage: null, attempt: '9', dialCallStatus: 'no-answer' },
+          { hasSecondLeg: false, attemptsPerNumber: 3 }
+        )
+      ).toEqual({ action: 'take-message' })
+    })
+
+    // A rule row from before the column existed, or one somebody edited by
+    // hand, must not be able to turn a phone call into an endless redial.
+    it('treats a missing or nonsense attempt count as a single ring', () => {
+      for (const attemptsPerNumber of [undefined, 0, -4, Number.NaN]) {
+        expect(
+          planVoicemailRequest({ stage: null, dialCallStatus: 'no-answer' }, {
+            hasSecondLeg: false,
+            attemptsPerNumber,
+          })
+        ).toEqual({ action: 'take-message' })
+      }
+    })
+
+    it('caps a wild stored count at the documented maximum', () => {
+      const ctx = { hasSecondLeg: false, attemptsPerNumber: 500 }
+      expect(
+        planVoicemailRequest({ stage: null, attempt: '5', dialCallStatus: 'no-answer' }, ctx)
+      ).toEqual({ action: 'take-message' })
+    })
+
+    // An unreadable attempt marker is a call that started before the marker
+    // existed - a deploy mid-call - and reads as the first try.
+    it('reads an unreadable attempt marker as the first try', () => {
+      expect(
+        planVoicemailRequest(
+          { stage: null, attempt: 'banana', dialCallStatus: 'no-answer' },
+          { hasSecondLeg: false, attemptsPerNumber: 2 }
+        )
+      ).toEqual({ action: 'dial', leg: 1, attempt: 2 })
     })
   })
 
@@ -174,6 +263,26 @@ describe('voicemailGreetingFor', () => {
     expect(voicemailGreetingFor({ voicemailGreeting: '', closedVoicemailGreeting: '  We are shut.  ' }, true)).toBe(
       'We are shut.'
     )
+  })
+})
+
+describe('dialActionUrl', () => {
+  // Builds on getSiteUrl, which throws without SITE_URL.
+  beforeAll(() => {
+    process.env.SITE_URL = 'https://example.test'
+  })
+
+  // Attempt one of leg one is the plain webhook URL, unchanged from before any
+  // of this existed, so a call already in flight across a deploy comes back to
+  // something the planner still understands.
+  it('leaves the first ring of the first number unmarked', () => {
+    expect(dialActionUrl(1, 1)).toBe(voicemailUrl())
+  })
+
+  it('marks the leg and the attempt when there is one to mark', () => {
+    expect(dialActionUrl(1, 3)).toBe(`${voicemailUrl()}?attempt=3`)
+    expect(dialActionUrl(2, 1)).toBe(`${voicemailUrl()}?leg=2`)
+    expect(dialActionUrl(2, 2)).toBe(`${voicemailUrl()}?leg=2&attempt=2`)
   })
 })
 

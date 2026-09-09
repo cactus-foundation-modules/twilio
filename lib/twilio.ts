@@ -65,6 +65,18 @@ export function regionHost(product: 'api' | 'routes', region: TwilioRegion): str
     : `${product}.${REGION_EDGE[region]}.${region}.twilio.com`
 }
 
+// Voice Intelligence, which is not on the account API's host and does not take
+// its product name in the same position: it is intelligence.twilio.com, and the
+// edge goes in front of the whole thing rather than after the product. Same
+// rule underneath though - a recording made on a Dublin-routed number can only
+// be transcribed on the Dublin edge, and asking us1 about it returns a flat
+// "not found" with nothing to say the Region was the problem.
+export function intelligenceHost(region: TwilioRegion): string {
+  return region === 'us1'
+    ? 'intelligence.twilio.com'
+    : `intelligence.${REGION_EDGE[region]}.${region}.twilio.com`
+}
+
 // "Any given Auth token or API key is only valid for the Twilio Region in which
 // it was created" - so a Region the site talks to needs its own token, found in
 // the Twilio console under API keys & tokens with that Region selected. The

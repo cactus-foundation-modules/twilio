@@ -24,7 +24,13 @@ import { validateTwilioSignature, isTwilioConfigured } from '@/modules/twilio/li
 import { getRuleForNumber } from '@/modules/twilio/lib/forwarding'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { voiceForRegion } from '@/modules/twilio/lib/voices'
-import { planVoicemailRequest, secondLegUrl, voicemailTwiml } from '@/modules/twilio/lib/voicemail'
+import {
+  dialActionUrl,
+  planVoicemailRequest,
+  transcriptionDialAttrs,
+  voicemailTwiml,
+} from '@/modules/twilio/lib/voicemail'
+import type { DialLeg } from '@/modules/twilio/lib/voicemail'
 import { recordVoicemail } from '@/modules/twilio/lib/voicemail-log'
 import { sendMissedCallEmail, sendMissedCallText } from '@/modules/twilio/lib/notify'
 import { escapeXml } from '@/modules/twilio/lib/twilio'
@@ -32,14 +38,18 @@ import type { ForwardingRule } from '@/modules/twilio/lib/forwarding'
 
 const E164 = /^\+[1-9]\d{7,14}$/
 
-// The second forwarding leg's <Dial>: same recording and caller-ID choices as
-// the first, its own action marker so the planner knows there is no third try.
-function secondDialTwiml(rule: ForwardingRule, called: string): string {
+// A follow-on <Dial>: the same number again, or the second one for the first
+// time. Same recording and caller-ID choices as the dial the voice webhook
+// made, and an action URL stamped with which number this is and which try, so
+// the planner can count the tries rather than start again on every reply.
+function legDialTwiml(rule: ForwardingRule, called: string, leg: DialLeg, attempt: number): string {
   const recordAttr = rule.recordCalls ? ' record="record-from-answer-dual"' : ''
+  const transcribeAttrs = transcriptionDialAttrs(rule, called)
   const callerIdAttr = rule.showCalledNumber && E164.test(called) ? ` callerId="${called}"` : ''
+  const target = leg === 2 ? rule.forwardToSecond : rule.forwardTo
   return (
-    `<Dial${recordAttr}${callerIdAttr} timeout="${rule.ringTimeout}" ` +
-    `action="${escapeXml(secondLegUrl())}" method="POST">${rule.forwardToSecond}</Dial>`
+    `<Dial${recordAttr}${transcribeAttrs}${callerIdAttr} timeout="${rule.ringTimeout}" ` +
+    `action="${escapeXml(dialActionUrl(leg, attempt))}" method="POST">${target}</Dial>`
   )
 }
 
@@ -88,12 +98,16 @@ export async function POST(request: NextRequest) {
     {
       stage,
       leg: request.nextUrl.searchParams.get('leg'),
+      attempt: request.nextUrl.searchParams.get('attempt'),
       dialCallStatus: params.DialCallStatus,
       recordingSid: params.RecordingSid,
       recordingUrl: params.RecordingUrl,
       recordingDuration: params.RecordingDuration,
     },
-    { hasSecondLeg: !!rule && E164.test(rule.forwardToSecond) }
+    {
+      hasSecondLeg: !!rule && E164.test(rule.forwardToSecond),
+      attemptsPerNumber: rule?.forwardAttempts,
+    }
   )
 
   if (plan.action === 'log-message') {
@@ -117,12 +131,16 @@ export async function POST(request: NextRequest) {
     return twiml('<Hangup/>')
   }
 
-  if (plan.action === 'dial-second') {
-    // First number rang out but there is a second one to try before anything
-    // is declared missed. rule is non-null here: the plan only says so when
-    // the context said the rule holds a second leg.
+  if (plan.action === 'dial') {
+    // Rang out, but there is another go left - the same number again, or the
+    // second number for the first time - before anything is declared missed.
+    // rule is non-null here: every route into this plan came from something the
+    // context read off the rule. A first leg with no usable target would be a
+    // rule that changed mid-call, and hanging up beats dialling an empty string.
     if (!rule) return twiml('<Hangup/>')
-    return twiml(secondDialTwiml(rule, called))
+    const target = plan.leg === 2 ? rule.forwardToSecond : rule.forwardTo
+    if (!E164.test(target)) return twiml('<Hangup/>')
+    return twiml(legDialTwiml(rule, called, plan.leg, plan.attempt))
   }
 
   if (plan.action === 'take-message') {

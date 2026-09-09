@@ -11,7 +11,8 @@ import { getSiteNumbers, sendSiteSms, type SiteNumber } from './numbers'
 import { isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion } from './twilio'
 import { callOutcome } from './call-legs'
 import { resolveNumberRegion } from './numbers'
-import { recentVoicemails, deleteVoicemail } from './voicemail-log'
+import { recentVoicemails, deleteVoicemail, filterVoicemailSids } from './voicemail-log'
+import { callTranscriptsForSids } from './call-transcripts'
 import { NotBlockableError, blockNumber, isNumberBlocked, unblockNumber } from './blocked-numbers'
 
 // Calls, voicemail and texts, published as conversations.
@@ -61,10 +62,18 @@ type Entry = {
   direction: 'in' | 'out'
   at: Date
   text: string
-  /** Voicemail-only: the recording SID for audio playback. */
-  recordingSid?: string
-  /** Voicemail-only: the site number that received the call, for region routing. */
-  toNumber?: string
+  /**
+   * When anything about this entry last changed, which for a voicemail is when
+   * its transcription landed - minutes after the message itself. Equal to `at`
+   * for everything that never changes after the fact, which is most of it.
+   */
+  changedAt: Date
+  /** Recording SIDs to offer as audio: a voicemail message, or the recording of
+   *  a call that was answered. Empty for anything with no audio behind it. */
+  recordingSids: string[]
+  /** The site's own number on this entry, which is what says which Twilio
+   *  Region the recording lives in. */
+  siteNumber?: string
 }
 
 function preview(text: string): string | null {
@@ -131,6 +140,16 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
     used.map(async (number) => {
       try {
         const calls = await listCallsForNumber(number.phoneNumber, number.region, PER_NUMBER)
+        // A call that rang out into voicemail carries the voicemail's own
+        // recording on the call SID as well, and that message already has an
+        // entry of its own. Offering it twice - once under "Missed call" and
+        // once under the voicemail - is the same audio pretending to be two
+        // things, so the voicemail SIDs are taken off the call entries here.
+        const callRecordingSids = calls.flatMap((c) => c.recordingSids)
+        const voicemailSids = await filterVoicemailSids(callRecordingSids)
+        // Words for the ones that were typed up. Keyed by recording, so a call
+        // with two recordings on it contributes both.
+        const transcripts = await callTranscriptsForSids(callRecordingSids)
         for (const call of calls) {
           const inbound = call.direction === 'inbound'
           // Forwarded calls and click-to-dial arrive already folded into one
@@ -139,13 +158,40 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
           // colleague. What the caller experienced is on the second leg, which
           // is what callOutcome hands back.
           const outcome = callOutcome(call)
+          const at = new Date(call.startTime || 0)
+          const ours = call.recordingSids.filter((sid) => !voicemailSids.has(sid))
+          const said = ours
+            .map((sid) => transcripts.get(sid))
+            .filter((t) => t?.status === 'completed' && t.text.trim())
+          // What was said, where anybody has typed it up, under the line saying
+          // the call happened - the line is still worth keeping, because "3 min
+          // 58 sec" and "Missed call" are the facts a transcript cannot state.
+          const description = describeCall(inbound ? 'in' : 'out', outcome.status, outcome.durationSeconds)
+          const text = said.length > 0
+            ? `${description}\n\n${said.map((t) => t!.text.trim()).join('\n\n')}`
+            : description
           entries.push({
             id: `call:${call.sid}`,
             kind: 'call',
             party: normaliseNumber(inbound ? call.from : call.to),
             direction: inbound ? 'in' : 'out',
-            at: new Date(call.startTime || 0),
-            text: describeCall(inbound ? 'in' : 'out', outcome.status, outcome.durationSeconds),
+            at,
+            // A transcript lands minutes after the call ended, so this is the
+            // second entry whose words turn up after it was first read.
+            changedAt: said.reduce(
+              (newest, t) => (t!.updatedAt > newest ? t!.updatedAt : newest),
+              at
+            ),
+            text,
+            // The recording of a conversation somebody actually had. It is
+            // attached the same way a voicemail's is, and for the same reason:
+            // a recorded call whose audio you cannot reach from the message is
+            // a recording nobody knows they have.
+            recordingSids: ours,
+            // The site's own number, not the caller's - it is what says which
+            // Twilio Region the recording is stored in, and we are already
+            // standing in the loop for it.
+            siteNumber: number.phoneNumber,
           })
         }
       } catch (err) {
@@ -157,13 +203,16 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
         const texts = await listMessagesForNumber(number.phoneNumber, number.region, PER_NUMBER)
         for (const text of texts) {
           const inbound = text.direction === 'inbound'
+          const at = new Date(text.dateSent || 0)
           entries.push({
             id: `sms:${text.sid}`,
             kind: 'sms',
             party: normaliseNumber(inbound ? text.from : text.to),
             direction: inbound ? 'in' : 'out',
-            at: new Date(text.dateSent || 0),
+            at,
+            changedAt: at,
             text: text.body ?? '',
+            recordingSids: [],
           })
         }
       } catch (err) {
@@ -185,9 +234,12 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
         party: normaliseNumber(voicemail.fromNumber),
         direction: 'in',
         at: voicemail.createdAt,
+        // The transcription lands minutes after the message, so this is the
+        // one entry whose words change after it has been read once.
+        changedAt: voicemail.updatedAt,
         text: words,
-        recordingSid: voicemail.recordingSid,
-        toNumber: voicemail.toNumber,
+        recordingSids: [voicemail.recordingSid],
+        siteNumber: voicemail.toNumber,
       })
     }
   } catch (err) {
@@ -205,6 +257,9 @@ type Grouped = {
   party: string
   entries: Entry[]
   lastAt: Date
+  /** The newest `changedAt` in the conversation, which runs ahead of lastAt
+   *  whenever something already said has since been typed up. */
+  changedAt: Date
   hasCall: boolean
 }
 
@@ -227,6 +282,7 @@ function group(entries: Entry[], ours: Set<string>): Grouped[] {
       party,
       entries: list,
       lastAt: newest.at,
+      changedAt: new Date(Math.max(...list.map((e) => e.changedAt.getTime()))),
       hasCall: list.some((e) => e.kind !== 'sms'),
     })
   }
@@ -244,6 +300,10 @@ function toSummary(g: Grouped): ConversationSummary {
     preview: preview(newest.text),
     participant: { name: null, email: null, phone: g.party },
     lastMessageAt: g.lastAt,
+    // Said separately from lastMessageAt, because they genuinely differ here: a
+    // voicemail's transcription arrives minutes after the message and does not
+    // make the conversation newer, but it does make what we hold of it stale.
+    contentAt: g.changedAt,
     // Nothing here records who has looked at what, and inventing a read flag
     // this module does not keep would be a lie in both directions.
     unread: false,
@@ -253,23 +313,26 @@ function toSummary(g: Grouped): ConversationSummary {
   }
 }
 
+// The audio behind an entry, as attachments pointing at the recording proxy -
+// which is session- and permission-gated, and needs the site number to know
+// which Twilio Region the recording lives in.
+function audioFor(entry: Entry): ConversationAttachment[] {
+  const label = entry.kind === 'voicemail' ? 'voicemail' : 'call'
+  return entry.recordingSids.map((sid) => {
+    const url = new URL(`/api/m/twilio/admin/recordings/${sid}`, 'http://localhost')
+    if (entry.siteNumber) url.searchParams.set('number', entry.siteNumber)
+    return {
+      filename: `${label}-${sid}.mp3`,
+      url: url.pathname + url.search,
+      contentType: 'audio/mpeg',
+    }
+  })
+}
+
 function toMessages(g: Grouped): ConversationMessage[] {
   return g.entries.map((entry) => {
-    const attachments: ConversationAttachment[] = []
-    
-    // Voicemails get an audio attachment pointing to the recording proxy
-    if (entry.kind === 'voicemail' && entry.recordingSid) {
-      const url = new URL('/api/m/twilio/admin/recordings/' + entry.recordingSid, 'http://localhost')
-      if (entry.toNumber) {
-        url.searchParams.set('number', entry.toNumber)
-      }
-      attachments.push({
-        filename: `voicemail-${entry.recordingSid}.mp3`,
-        url: url.pathname + url.search,
-        contentType: 'audio/mpeg',
-      })
-    }
-    
+    const attachments = audioFor(entry)
+
     return {
       id: entry.id,
       direction: entry.direction,
@@ -317,8 +380,13 @@ async function list(opts: ConversationListOptions): Promise<ConversationListPage
   const before = opts.cursor ? Date.parse(opts.cursor) : null
 
   const filtered = groups.filter((g) => {
+    // `since` is asked against when the conversation last CHANGED, not when it
+    // last got a message. A voicemail typed up ten minutes after it was left
+    // has said nothing new and must not jump the list - but a reader that has
+    // already copied it needs to be handed it again, or the words never arrive.
+    // Paging still runs on lastAt, which is the order the list is in.
+    if (since !== null && g.changedAt.getTime() <= since) return false
     const at = g.lastAt.getTime()
-    if (since !== null && at <= since) return false
     if (before !== null && !Number.isNaN(before) && at >= before) return false
     return true
   })

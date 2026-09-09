@@ -14,6 +14,8 @@ import {
   isValidHolidayDate,
   MIN_RING_TIMEOUT,
   MAX_RING_TIMEOUT,
+  MIN_FORWARD_ATTEMPTS,
+  MAX_FORWARD_ATTEMPTS,
   type BusinessHours,
 } from '@/modules/twilio/lib/business-hours'
 
@@ -38,9 +40,13 @@ type NumberRow = {
   greetingMessage: string
   greetingVoice: string
   recordCalls: boolean
+  /** Have recorded calls typed up. Only means anything alongside recordCalls. */
+  transcribeCalls: boolean
   showCalledNumber: boolean
   voicemailEnabled: boolean
   ringTimeout: number
+  /** How many times each forwarding number is rung before the call moves on. */
+  forwardAttempts: number
   voicemailGreeting: string
   closedVoicemailGreeting: string
   voicemailVoice: string
@@ -572,9 +578,11 @@ export function TwilioForwardingSection() {
           greetingMessage: row.greetingMessage,
           greetingVoice: row.greetingVoice,
           recordCalls: row.recordCalls,
+          transcribeCalls: row.transcribeCalls,
           showCalledNumber: row.showCalledNumber,
           voicemailEnabled: row.voicemailEnabled,
           ringTimeout: row.ringTimeout,
+          forwardAttempts: row.forwardAttempts,
           voicemailGreeting: row.voicemailGreeting,
           closedVoicemailGreeting: row.closedVoicemailGreeting,
           voicemailVoice: row.voicemailVoice,
@@ -811,6 +819,59 @@ export function TwilioForwardingSection() {
                   goes to voicemail (if it&apos;s on) or ends.
                 </p>
               )}
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'flex-end',
+                  gap: 'var(--space-4)',
+                  marginTop: 'var(--space-4)',
+                }}
+              >
+                <div className="field" style={{ margin: 0, flex: '0 1 11rem' }}>
+                  <label htmlFor={`ring-${row.sid}`}>Ring for (seconds)</label>
+                  <input
+                    id={`ring-${row.sid}`}
+                    type="number"
+                    min={MIN_RING_TIMEOUT}
+                    max={MAX_RING_TIMEOUT}
+                    value={row.ringTimeout}
+                    disabled={!row.forwardingEnabled}
+                    onChange={(e) => updateRow(row.sid, { ringTimeout: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="field" style={{ margin: 0, flex: '0 1 11rem' }}>
+                  <label htmlFor={`attempts-${row.sid}`}>Ring each number this many times</label>
+                  <input
+                    id={`attempts-${row.sid}`}
+                    type="number"
+                    min={MIN_FORWARD_ATTEMPTS}
+                    max={MAX_FORWARD_ATTEMPTS}
+                    value={row.forwardAttempts}
+                    disabled={!row.forwardingEnabled}
+                    onChange={(e) => updateRow(row.sid, { forwardAttempts: Number(e.target.value) })}
+                  />
+                </div>
+                <p style={{ ...hint, flex: '1 1 20rem', paddingBottom: 'var(--space-2)' }}>
+                  {row.forwardAttempts > 1 ? (
+                    <>
+                      Each ring lasts {row.ringTimeout} seconds, then we hang up and ring straight
+                      back - {row.forwardAttempts} times
+                      {row.forwardToSecond.trim() !== '' ? ' for each number' : ''} before the call
+                      goes to voicemail. That is the point of a short ringing time: it stops the
+                      call reaching the mobile&apos;s own mailbox, where your messages would be out
+                      of reach, without leaving whoever is holding it one brief chance to answer.
+                      The caller simply hears it ring again.
+                    </>
+                  ) : (
+                    <>
+                      Each ring lasts {row.ringTimeout} seconds, then the call moves on. Shorten
+                      that to stop calls landing in the mobile&apos;s own mailbox, and raise this to
+                      more than one so a short ring is not the only chance to answer.
+                    </>
+                  )}
+                </p>
+              </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
                 <div className="field" style={{ margin: 0, flex: '2 1 20rem' }}>
                   <label>Greeting played before forwarding (optional)</label>
@@ -888,11 +949,29 @@ export function TwilioForwardingSection() {
                 </p>
               )}
               {row.recordCalls && (
-                <p style={{ ...hint, marginTop: 'var(--space-2)' }}>
-                  Recordings live in your Twilio account and can be played back from the call
-                  log on the Twilio page. Telling callers they are being recorded is your
-                  responsibility - the greeting above is a handy place to do it.
-                </p>
+                <>
+                  <p style={{ ...hint, marginTop: 'var(--space-2)' }}>
+                    Recordings live in your Twilio account and can be played back from the call
+                    log on the Twilio page, and from the message itself in your inbox. Telling
+                    callers they are being recorded is your responsibility - the greeting above is
+                    a handy place to do it.
+                  </p>
+                  <label style={{ ...checkboxLabel, marginTop: 'var(--space-3)' }}>
+                    <input
+                      type="checkbox"
+                      checked={row.transcribeCalls}
+                      onChange={(e) => updateRow(row.sid, { transcribeCalls: e.target.checked })}
+                    />
+                    Type up recorded calls
+                  </label>
+                  <p style={{ ...hint, marginTop: 'var(--space-2)' }}>
+                    Twilio writes out what was said and files it with the call, so you can read a
+                    conversation instead of sitting through it. It appears a few minutes after the
+                    call ends. <strong>This one costs money</strong> - Twilio charges by the minute
+                    for every recorded call on this number, on top of the call itself, so leave it
+                    off unless you will genuinely read them.
+                  </p>
+                </>
               )}
               <div className="field" style={{ margin: 'var(--space-4) 0 0', maxWidth: '24rem' }}>
                 <label>Callers who withhold their number</label>
@@ -955,18 +1034,6 @@ export function TwilioForwardingSection() {
 
                 {row.voicemailEnabled && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 'var(--space-4)', marginTop: 'var(--space-3)' }}>
-                    <div className="field" style={{ margin: 0, flex: '0 1 12rem' }}>
-                      <label htmlFor={`ring-${row.sid}`}>Ring for (seconds) before voicemail</label>
-                      <input
-                        id={`ring-${row.sid}`}
-                        type="number"
-                        min={MIN_RING_TIMEOUT}
-                        max={MAX_RING_TIMEOUT}
-                        value={row.ringTimeout}
-                        disabled={!row.forwardingEnabled}
-                        onChange={(e) => updateRow(row.sid, { ringTimeout: Number(e.target.value) })}
-                      />
-                    </div>
                     {!row.forwardingEnabled && (
                       <p style={{ ...hint, flexBasis: '100%' }}>
                         Forwarding is off, so there is nothing to ring - callers go straight to

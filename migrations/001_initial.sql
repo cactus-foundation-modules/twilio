@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS "tw_forwarding_rules" (
     -- Empty = the number uses its own settings. Only one level is allowed: a
     -- number that follows another may not itself be followed. See migration 010.
     "follows_phone_sid"       TEXT    NOT NULL DEFAULT '',
+    -- How many times each forwarding number is rung before the call moves on
+    -- to the second number and then to voicemail. 1 = ring once, which is how
+    -- forwarding has always behaved. See migration 012.
+    "forward_attempts"        INTEGER NOT NULL DEFAULT 1,
+    -- Have Voice Intelligence type up recorded calls on this number. Off by
+    -- default because it bills by the minute. See migration 014.
+    "transcribe_calls"        BOOLEAN NOT NULL DEFAULT false,
     "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_forwarding_rules_pkey" PRIMARY KEY ("id")
@@ -106,6 +113,11 @@ CREATE TABLE IF NOT EXISTS "tw_voicemails" (
     "transcription_text"   TEXT NOT NULL DEFAULT '',
     "transcription_status" TEXT NOT NULL DEFAULT '',
     "created_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- When we last learned something new about this message - a transcription
+    -- arriving, minutes after the recording. created_at orders the message in a
+    -- conversation; this says whether anything reading on a schedule has seen
+    -- the latest of it. See migration 013.
+    "updated_at"       TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_voicemails_pkey" PRIMARY KEY ("recording_sid")
 );
 CREATE INDEX IF NOT EXISTS "tw_voicemails_call_sid_idx" ON "tw_voicemails" ("call_sid");
@@ -120,10 +132,36 @@ CREATE TABLE IF NOT EXISTS "tw_settings" (
     "notify_missed_call_email" BOOLEAN      NOT NULL DEFAULT false,
     "notify_email"             TEXT         NOT NULL DEFAULT '',
     "retention_days"           INTEGER      NOT NULL DEFAULT 0,
+    -- The Voice Intelligence Service transcripts are created against,
+    -- provisioned on first use. Empty = not provisioned. See migration 014.
+    "intelligence_service_sid" TEXT         NOT NULL DEFAULT '',
     "created_at"               TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at"               TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "tw_settings_pkey" PRIMARY KEY ("id")
 );
+
+-- ---------------------------------------------------------------------------
+-- One row per recorded call this site asked Voice Intelligence to type up.
+-- Keyed on the recording, which is what Voice Intelligence works from and what
+-- the call log already matches on. Opt-in per number and billed per minute, so
+-- nothing is written here until an owner switches it on. See migration 014.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS "tw_call_transcripts" (
+    "recording_sid"  TEXT         NOT NULL,
+    "call_sid"       TEXT         NOT NULL DEFAULT '',
+    -- The site number the call came in on: what says which Twilio Region the
+    -- recording and the transcript live in, days after the call itself.
+    "site_number"    TEXT         NOT NULL DEFAULT '',
+    "transcript_sid" TEXT         NOT NULL DEFAULT '',
+    -- 'pending' | 'completed' | 'failed', worded exactly as tw_voicemails does.
+    "status"         TEXT         NOT NULL DEFAULT 'pending',
+    "text"           TEXT         NOT NULL DEFAULT '',
+    "created_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at"     TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "tw_call_transcripts_pkey" PRIMARY KEY ("recording_sid")
+);
+CREATE INDEX IF NOT EXISTS "tw_call_transcripts_transcript_sid_idx"
+    ON "tw_call_transcripts" ("transcript_sid") WHERE "transcript_sid" <> '';
 
 -- ---------------------------------------------------------------------------
 -- Phone verification codes for SMS 2FA enrolment (admins and members).
