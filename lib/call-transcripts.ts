@@ -7,6 +7,8 @@
 // tell it has changed.
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db/prisma'
+import { resolveNumberRegion } from './numbers'
+import { requestTranscript } from './intelligence'
 
 export type CallTranscriptRow = {
   recordingSid: string
@@ -47,6 +49,64 @@ export async function setCallTranscriptSid(recordingSid: string, transcriptSid: 
        SET "transcript_sid" = ${transcriptSid}, "updated_at" = CURRENT_TIMESTAMP
      WHERE "recording_sid" = ${recordingSid}
   `
+}
+
+/** Marks a booked transcript as failed when Twilio never accepted the job.
+ *
+ *  This is deliberately keyed by recording SID rather than transcript SID:
+ *  failures here happen before Voice Intelligence has given us its own id.
+ *  Leaving the row as "pending" would make the admin screen say "on its way"
+ *  forever, which is comfortingly useless in the grand Cactus tradition. */
+export async function failCallTranscriptRequest(recordingSid: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "tw_call_transcripts"
+       SET "status" = 'failed', "text" = '', "updated_at" = CURRENT_TIMESTAMP
+     WHERE "recording_sid" = ${recordingSid}
+       AND "transcript_sid" = ''
+  `
+}
+
+export type CallTranscriptRetryResult = {
+  checked: number
+  requested: number
+  failed: number
+  errors: string[]
+}
+
+/** Gives another chance to recordings that were booked locally before Voice
+ *  Intelligence accepted the work.
+ *
+ *  Bounded, newest-first, and only rows with no transcript SID: this never asks
+ *  Twilio to type up a recording whose job id we already hold. That matters
+ *  because the retry runs on a timer and Voice Intelligence quite sensibly
+ *  permits only one transcript per recording. */
+export async function retryUnacceptedCallTranscripts(limit = 10): Promise<CallTranscriptRetryResult> {
+  const rows = await prisma.$queryRaw<Array<{ recording_sid: string; site_number: string }>>`
+    SELECT "recording_sid", "site_number"
+      FROM "tw_call_transcripts"
+     WHERE "transcript_sid" = ''
+       AND "status" IN ('pending', 'failed')
+     ORDER BY "updated_at" ASC
+     LIMIT ${Math.max(1, Math.min(25, Math.floor(limit)))}
+  `
+  const result: CallTranscriptRetryResult = { checked: rows.length, requested: 0, failed: 0, errors: [] }
+
+  for (const row of rows) {
+    try {
+      const region = await resolveNumberRegion(row.site_number)
+      const transcriptSid = await requestTranscript(row.recording_sid, region)
+      await setCallTranscriptSid(row.recording_sid, transcriptSid)
+      result.requested += 1
+    } catch (err) {
+      await failCallTranscriptRequest(row.recording_sid)
+      result.failed += 1
+      const message = err instanceof Error ? err.message : String(err)
+      result.errors.push(`${row.recording_sid}: ${message}`)
+      console.error('[twilio] could not retry call transcript', row.recording_sid, err)
+    }
+  }
+
+  return result
 }
 
 /** The words, when they arrive. Failed transcripts keep the row and lose the

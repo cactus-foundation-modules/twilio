@@ -15,7 +15,11 @@ import { validateTwilioSignature, isTwilioConfigured } from '@/modules/twilio/li
 import { getRuleForNumber } from '@/modules/twilio/lib/forwarding'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { requestTranscript } from '@/modules/twilio/lib/intelligence'
-import { beginCallTranscript, setCallTranscriptSid } from '@/modules/twilio/lib/call-transcripts'
+import {
+  beginCallTranscript,
+  failCallTranscriptRequest,
+  setCallTranscriptSid,
+} from '@/modules/twilio/lib/call-transcripts'
 
 const RECORDING_SID = /^RE[a-f0-9]{32}$/i
 
@@ -69,6 +73,7 @@ export async function POST(request: NextRequest) {
     const transcriptSid = await requestTranscript(recordingSid, region)
     await setCallTranscriptSid(recordingSid, transcriptSid)
   } catch (err) {
+    await failCallTranscriptRequest(recordingSid)
     console.error('[twilio] could not ask for a transcript of', recordingSid, err)
   }
 
