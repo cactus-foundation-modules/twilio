@@ -11,7 +11,7 @@ import { getSiteNumbers, sendSiteSms, type SiteNumber } from './numbers'
 import { isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion } from './twilio'
 import { callOutcome } from './call-legs'
 import { resolveNumberRegion } from './numbers'
-import { recentVoicemails, deleteVoicemail, filterVoicemailSids } from './voicemail-log'
+import { recentVoicemails, deleteVoicemail, filterVoicemailSids, voicemailByCallSid } from './voicemail-log'
 import { callTranscriptsForSids } from './call-transcripts'
 import { NotBlockableError, blockNumber, isNumberBlocked, unblockNumber } from './blocked-numbers'
 
@@ -427,16 +427,28 @@ async function byIdentity(identity: { phones: string[] }): Promise<ConversationS
 
 // Deletes a voicemail from both the local database and Twilio's cloud. Only
 // voicemails can be deleted - calls and texts are read live from Twilio and
-// are governed by Twilio's own retention, not ours. The message ID is
-// `voicemail:${recordingSid}`, so anything else is rejected as not ours.
+// are governed by Twilio's own retention, not ours. The message ID is usually
+// `voicemail:${recordingSid}`; a copy filed under `call:${callSid}` is accepted
+// too when that call left a voicemail, which is the same recording either way.
 async function deleteMessage(messageId: string): Promise<boolean> {
-  // Not ours to delete. False, per the contract: the consumer turns this into
-  // "that kind of message cannot be deleted here" rather than an error, which
-  // is exactly right for a call or a text.
-  if (!messageId.startsWith('voicemail:')) return false
+  let recordingSid: string | null = null
+  let siteNumber: string | undefined
 
-  const recordingSid = messageId.slice('voicemail:'.length)
-  if (!/^RE[a-f0-9]{32}$/i.test(recordingSid)) return false
+  if (messageId.startsWith('voicemail:')) {
+    recordingSid = messageId.slice('voicemail:'.length)
+    if (!/^RE[a-f0-9]{32}$/i.test(recordingSid)) return false
+  } else if (messageId.startsWith('call:')) {
+    const callSid = messageId.slice('call:'.length)
+    const voicemail = await voicemailByCallSid(callSid)
+    if (!voicemail) return false
+    recordingSid = voicemail.recordingSid
+    siteNumber = voicemail.toNumber || undefined
+  } else {
+    // Not ours to delete. False, per the contract: the consumer turns this into
+    // "that kind of message cannot be deleted here" rather than an error, which
+    // is exactly right for a text or a call that was not a voicemail.
+    return false
+  }
 
   // A recording we no longer hold counts as ALREADY GONE, not as a refusal.
   // Somebody asking to be rid of something must not be told no because the far
@@ -445,6 +457,11 @@ async function deleteMessage(messageId: string): Promise<boolean> {
   const voicemails = await recentVoicemails(500)
   const voicemail = voicemails.find((v) => v.recordingSid === recordingSid)
   if (!voicemail) {
+    // Try Twilio anyway when we know which site number owns it - the local row
+    // may have gone first while the recording is still being charged for.
+    if (siteNumber) {
+      await deleteRecording(recordingSid, await resolveNumberRegion(siteNumber))
+    }
     await deleteVoicemail(recordingSid)
     forgetCachedConversations()
     return true

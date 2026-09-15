@@ -125,6 +125,28 @@ export async function filterVoicemailSids(recordingSids: string[]): Promise<Set<
   return new Set(rows.map((r) => r.recording_sid))
 }
 
+/** The voicemail left on one call, if there is one. Used when a conversation
+ *  message still carries the call SID rather than the voicemail id. */
+export async function voicemailByCallSid(callSid: string): Promise<VoicemailRow | null> {
+  if (!/^CA[a-f0-9]{32}$/i.test(callSid)) return null
+  const rows = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    SELECT "recording_sid", "call_sid", "from_number", "to_number", "duration_seconds", "created_at"
+      FROM "tw_voicemails"
+     WHERE "call_sid" = ${callSid}
+     LIMIT 1
+  `
+  const r = rows[0]
+  if (!r) return null
+  return {
+    recordingSid: r.recording_sid as string,
+    callSid: r.call_sid as string,
+    fromNumber: (r.from_number as string) ?? '',
+    toNumber: (r.to_number as string) ?? '',
+    durationSeconds: Number(r.duration_seconds ?? 0),
+    createdAt: r.created_at as Date,
+  }
+}
+
 // Recent voicemail messages, newest first. The call log asks about the
 // recordings on one page of calls; this asks the other way round, for anything
 // that wants the messages themselves.

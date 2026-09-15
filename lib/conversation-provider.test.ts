@@ -17,6 +17,7 @@ const listMessagesForNumber = vi.hoisted(() => vi.fn())
 const recentVoicemails = vi.hoisted(() => vi.fn())
 const deleteVoicemail = vi.hoisted(() => vi.fn())
 const filterVoicemailSids = vi.hoisted(() => vi.fn())
+const voicemailByCallSid = vi.hoisted(() => vi.fn())
 const callTranscriptsForSids = vi.hoisted(() => vi.fn())
 const deleteRecording = vi.hoisted(() => vi.fn())
 const getHomeRegion = vi.hoisted(() => vi.fn())
@@ -31,7 +32,7 @@ vi.mock('./numbers', () => ({ getSiteNumbers, sendSiteSms, resolveNumberRegion }
 vi.mock('./twilio', () => ({
   isTwilioConfigured, listCallsForNumber, listMessagesForNumber, deleteRecording, getHomeRegion,
 }))
-vi.mock('./voicemail-log', () => ({ recentVoicemails, deleteVoicemail, filterVoicemailSids }))
+vi.mock('./voicemail-log', () => ({ recentVoicemails, deleteVoicemail, filterVoicemailSids, voicemailByCallSid }))
 vi.mock('./call-transcripts', () => ({ callTranscriptsForSids }))
 vi.mock('./blocked-numbers', () => ({
   NotBlockableError, blockNumber, unblockNumber, isNumberBlocked,
@@ -80,6 +81,7 @@ beforeEach(() => {
   recentVoicemails.mockReset().mockResolvedValue([])
   deleteVoicemail.mockReset().mockResolvedValue(undefined)
   filterVoicemailSids.mockReset().mockResolvedValue(new Set<string>())
+  voicemailByCallSid.mockReset().mockResolvedValue(null)
   callTranscriptsForSids.mockReset().mockResolvedValue(new Map())
   deleteRecording.mockReset().mockResolvedValue(undefined)
   getHomeRegion.mockReset().mockReturnValue('ie1')
@@ -369,9 +371,30 @@ describe('deleting a message', () => {
   const SID = 'RE00000000000000000000000000000001'
 
   it('will not touch a call or a text, and says so with false rather than throwing', async () => {
-    await expect(provider.deleteMessage!('call:CA1')).resolves.toBe(false)
+    await expect(provider.deleteMessage!('call:CA00000000000000000000000000000001')).resolves.toBe(false)
     await expect(provider.deleteMessage!('sms:SM1')).resolves.toBe(false)
     expect(deleteRecording).not.toHaveBeenCalled()
+  })
+
+  it('deletes by call SID when that call left a voicemail', async () => {
+    const CALL = 'CA00000000000000000000000000000002'
+    voicemailByCallSid.mockResolvedValue({
+      recordingSid: SID,
+      callSid: CALL,
+      fromNumber: '+447700900123',
+      toNumber: '+441134960000',
+      durationSeconds: 12,
+      createdAt: new Date('2026-08-27T11:00:00Z'),
+    })
+    recentVoicemails.mockResolvedValue([
+      { recordingSid: SID, toNumber: '+441134960000' },
+    ])
+
+    await expect(provider.deleteMessage!(`call:${CALL}`)).resolves.toBe(true)
+
+    expect(voicemailByCallSid).toHaveBeenCalledWith(CALL)
+    expect(deleteRecording).toHaveBeenCalledWith(SID, 'ie1')
+    expect(deleteVoicemail).toHaveBeenCalledWith(SID)
   })
 
   it('deletes the recording at Twilio before forgetting it here', async () => {
