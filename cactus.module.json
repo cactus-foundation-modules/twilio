@@ -1,9 +1,9 @@
 {
   "name": "twilio",
-  "version": "0.1.43",
+  "version": "0.1.44",
   "tablePrefix": "tw_",
   "description": "Twilio integration: call forwarding with voicemail and opening hours, call and message logs with recording playback, click-to-dial from your own numbers, WhatsApp messaging with approved templates, and SMS login codes for admins and members.",
-  "requiresCoreVersion": "0.5.1559",
+  "requiresCoreVersion": "0.5.1679",
   "requiredEnvVars": [
     {
       "name": "TWILIO_HOME_REGION",
@@ -69,6 +69,12 @@
       "component": "TwilioAdminSmsSection"
     },
     {
+      "point": "core.media-private-storage",
+      "id": "twilio",
+      "import": "./lib/media-private-storage",
+      "component": "twilioPrivateStorage"
+    },
+    {
       "point": "core.conversation-provider",
       "id": "twilio",
       "label": "Phone",
@@ -99,6 +105,7 @@
     "tw_blocked_numbers",
     "tw_call_transcripts",
     "tw_forwarding_rules",
+    "tw_recording_archive",
     "tw_settings",
     "tw_site_numbers",
     "tw_verification_codes",

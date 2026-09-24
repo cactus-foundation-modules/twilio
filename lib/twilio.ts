@@ -430,7 +430,11 @@ export type { CallLogEntry, ConnectedLeg } from './call-legs'
 export async function listCallsForNumber(
   phoneNumber: string,
   region: TwilioRegion = getHomeRegion(),
-  limit = 50
+  limit = 50,
+  // Recordings taken off Twilio but still kept on the site. Twilio's listing no
+  // longer knows them, so without these a call would lose its recording the
+  // moment it was moved off Twilio.
+  keptRecordings: Array<{ recordingSid: string; callSid: string }> = []
 ): Promise<CallLogEntry[]> {
   type RawCall = {
     sid: string
@@ -455,6 +459,11 @@ export async function listCallsForNumber(
     const list = recordingsByCall.get(r.call_sid) ?? []
     list.push(r.sid)
     recordingsByCall.set(r.call_sid, list)
+  }
+  for (const kept of keptRecordings) {
+    const list = recordingsByCall.get(kept.callSid) ?? []
+    if (!list.includes(kept.recordingSid)) list.push(kept.recordingSid)
+    recordingsByCall.set(kept.callSid, list)
   }
 
   const bySid = new Map<string, RawCall>()

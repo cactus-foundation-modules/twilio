@@ -7,6 +7,10 @@
 // does not say which that was - so the call's own number comes along in the
 // query and the Region is resolved from it. A wrong Region reads as
 // "Recording not found", which is why this is not left to a default.
+//
+// A recording with a copy saved on the site is played from that copy, whether
+// or not Twilio still has it: it is the one that survives being taken off
+// Twilio, and reading it costs nothing on the Twilio bill.
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromCookie } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/permissions/check'
@@ -14,6 +18,7 @@ import { errorResponse } from '@/lib/utils'
 import { isTwilioConfigured, fetchRecordingAudio, getHomeRegion } from '@/modules/twilio/lib/twilio'
 import { resolveNumberRegion } from '@/modules/twilio/lib/numbers'
 import { normalisePhone } from '@/modules/twilio/lib/verification'
+import { archiveRow, hasSavedCopy, readSavedCopy } from '@/modules/twilio/lib/recording-archive'
 
 export async function GET(
   request: NextRequest,
@@ -29,6 +34,26 @@ export async function GET(
   if (!/^RE[a-f0-9]{32}$/i.test(sid)) return errorResponse('Invalid recording id')
 
   try {
+    const saved = await archiveRow(sid)
+    if (saved && hasSavedCopy(saved)) {
+      try {
+        const bytes = await readSavedCopy(saved)
+        if (bytes) {
+          return new NextResponse(new Uint8Array(bytes), {
+            headers: {
+              'Content-Type': saved.contentType,
+              'Content-Length': String(bytes.length),
+              'Cache-Control': 'private, max-age=3600',
+            },
+          })
+        }
+      } catch (err) {
+        // Storage having a bad minute. Twilio may still have it, so fall
+        // through rather than telling somebody their recording is lost.
+        console.warn('[twilio] could not read the saved copy of', sid, err)
+      }
+    }
+
     const number = normalisePhone(request.nextUrl.searchParams.get('number') ?? '')
     const region = number ? await resolveNumberRegion(number) : getHomeRegion()
 

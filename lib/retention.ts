@@ -11,15 +11,17 @@ import {
   isTwilioConfigured,
   listRecordingSidsBefore,
 } from './twilio'
+import { deleteSavedCopy, savedCopiesBefore } from './recording-archive'
 
 export type RetentionResult = {
   recordingsDeleted: number
+  savedCopiesDeleted: number
   voicemailRowsDeleted: number
   errors: string[]
 }
 
 export async function runRetentionSweep(now: Date = new Date()): Promise<RetentionResult> {
-  const result: RetentionResult = { recordingsDeleted: 0, voicemailRowsDeleted: 0, errors: [] }
+  const result: RetentionResult = { recordingsDeleted: 0, savedCopiesDeleted: 0, voicemailRowsDeleted: 0, errors: [] }
 
   const { retentionDays } = await getTwilioSettings()
   if (retentionDays <= 0 || !isTwilioConfigured()) return result
@@ -43,6 +45,23 @@ export async function runRetentionSweep(now: Date = new Date()): Promise<Retenti
     } catch (err) {
       result.errors.push(err instanceof Error ? err.message : `Failed to list recordings in ${region}`)
     }
+  }
+
+  // Copies saved on the site go by the same keep-for period: a recording taken
+  // off Twilio is still a recording, and moving it must not be a way round the
+  // owner's own limit. Aged from when the copy was made, which for a recording
+  // copied late errs on the side of keeping it a little longer.
+  try {
+    for (const sid of await savedCopiesBefore(cutoff)) {
+      try {
+        await deleteSavedCopy(sid)
+        result.savedCopiesDeleted++
+      } catch (err) {
+        result.errors.push(err instanceof Error ? err.message : `Failed to delete the saved copy of ${sid}`)
+      }
+    }
+  } catch (err) {
+    result.errors.push(err instanceof Error ? err.message : 'Failed to list saved recording copies')
   }
 
   // The rows go on our side regardless of how the Twilio deletes fared: a row

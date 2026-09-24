@@ -1,5 +1,7 @@
 import type {
   ConversationAttachment,
+  ConversationAttachmentAction,
+  ConversationAttachmentState,
   ConversationListOptions,
   ConversationListPage,
   ConversationMessage,
@@ -14,6 +16,17 @@ import { resolveNumberRegion } from './numbers'
 import { recentVoicemails, deleteVoicemail, filterVoicemailSids, voicemailByCallSid } from './voicemail-log'
 import { callTranscriptsForSids } from './call-transcripts'
 import { NotBlockableError, blockNumber, isNumberBlocked, unblockNumber } from './blocked-numbers'
+import {
+  RECORDING_SID,
+  RecordingArchiveError,
+  archiveRowsForSids,
+  deleteSavedCopy,
+  hasSavedCopy,
+  onTwilio,
+  recordingsOffTwilio,
+  removeFromTwilio,
+  type ArchiveRow,
+} from './recording-archive'
 
 // Calls, voicemail and texts, published as conversations.
 //
@@ -71,6 +84,9 @@ type Entry = {
   /** Recording SIDs to offer as audio: a voicemail message, or the recording of
    *  a call that was answered. Empty for anything with no audio behind it. */
   recordingSids: string[]
+  /** The recordings above that can still be played - all of them, less any
+   *  deleted from Twilio and from the site as well. */
+  playableSids: string[]
   /** The site's own number on this entry, which is what says which Twilio
    *  Region the recording lives in. */
   siteNumber?: string
@@ -133,13 +149,23 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
 
   const entries: Entry[] = []
 
+  // Recordings moved off Twilio onto the site, put back on their calls below.
+  // A failure costs those recordings their place on the call, not the listing.
+  const offTwilio = await recordingsOffTwilio().catch((err) => {
+    console.error('[twilio] could not read the recordings kept on the site:', err)
+    return []
+  })
+  // Deleted from Twilio and from the site: still on the call, so the inbox can
+  // say so, but never offered as something to play.
+  const gone = new Set(offTwilio.filter((r) => !r.kept).map((r) => r.recordingSid))
+
   // One number failing costs that number, not the whole listing: a routing
   // region with nothing in it must not hide the number that does have the
   // messages on it.
   await Promise.all(
     used.map(async (number) => {
       try {
-        const calls = await listCallsForNumber(number.phoneNumber, number.region, PER_NUMBER)
+        const calls = await listCallsForNumber(number.phoneNumber, number.region, PER_NUMBER, offTwilio)
         // A call that rang out into voicemail carries the voicemail's own
         // recording on the call SID as well, and that message already has an
         // entry of its own. Offering it twice - once under "Missed call" and
@@ -188,6 +214,7 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
             // a recorded call whose audio you cannot reach from the message is
             // a recording nobody knows they have.
             recordingSids: ours,
+            playableSids: ours.filter((sid) => !gone.has(sid)),
             // The site's own number, not the caller's - it is what says which
             // Twilio Region the recording is stored in, and we are already
             // standing in the loop for it.
@@ -213,6 +240,7 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
             changedAt: at,
             text: text.body ?? '',
             recordingSids: [],
+            playableSids: [],
           })
         }
       } catch (err) {
@@ -224,7 +252,10 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
   // Voicemail is the one part this module keeps, so it survives whatever
   // Twilio's own retention does to the recording listing.
   try {
-    for (const voicemail of await recentVoicemails()) {
+    const voicemails = await recentVoicemails()
+    const archived = await archiveRowsForSids(voicemails.map((v) => v.recordingSid))
+    for (const voicemail of voicemails) {
+      const row = archived.get(voicemail.recordingSid)
       const words = voicemail.transcriptionStatus === 'completed' && voicemail.transcriptionText
         ? voicemail.transcriptionText
         : `Voicemail, ${voicemail.durationSeconds} seconds`
@@ -239,6 +270,9 @@ async function collectEntries(): Promise<{ entries: Entry[]; ours: Set<string> }
         changedAt: voicemail.updatedAt,
         text: words,
         recordingSids: [voicemail.recordingSid],
+        // Kept as a message once its recording is deleted everywhere - it is
+        // still somebody having rung - but with nothing left to play.
+        playableSids: onTwilio(row) || hasSavedCopy(row) ? [voicemail.recordingSid] : [],
         siteNumber: voicemail.toNumber,
       })
     }
@@ -316,17 +350,19 @@ function toSummary(g: Grouped): ConversationSummary {
 // The audio behind an entry, as attachments pointing at the recording proxy -
 // which is session- and permission-gated, and needs the site number to know
 // which Twilio Region the recording lives in.
+function recordingUrl(entry: Entry, sid: string): string {
+  const url = new URL(`/api/m/twilio/admin/recordings/${sid}`, 'http://localhost')
+  if (entry.siteNumber) url.searchParams.set('number', entry.siteNumber)
+  return url.pathname + url.search
+}
+
 function audioFor(entry: Entry): ConversationAttachment[] {
   const label = entry.kind === 'voicemail' ? 'voicemail' : 'call'
-  return entry.recordingSids.map((sid) => {
-    const url = new URL(`/api/m/twilio/admin/recordings/${sid}`, 'http://localhost')
-    if (entry.siteNumber) url.searchParams.set('number', entry.siteNumber)
-    return {
-      filename: `${label}-${sid}.mp3`,
-      url: url.pathname + url.search,
-      contentType: 'audio/mpeg',
-    }
-  })
+  return entry.playableSids.map((sid) => ({
+    filename: `${label}-${sid}.mp3`,
+    url: recordingUrl(entry, sid),
+    contentType: 'audio/mpeg',
+  }))
 }
 
 function toMessages(g: Grouped): ConversationMessage[] {
@@ -477,10 +513,102 @@ async function deleteMessage(messageId: string): Promise<boolean> {
   // one of them is worth trying again; swallowing the second into the first told
   // somebody their voicemail was undeletable when Twilio had merely had a bad
   // minute.
-  await deleteRecording(recordingSid, region)
+  const archived = (await archiveRowsForSids([recordingSid])).get(recordingSid)
+  if (onTwilio(archived)) await deleteRecording(recordingSid, region)
+  // And the copy saved on the site, if there is one: deleting a voicemail means
+  // deleting it, not moving it somewhere less obvious.
+  await deleteSavedCopy(recordingSid)
   await deleteVoicemail(recordingSid)
   forgetCachedConversations()
   return true
+}
+
+// --- Recordings: off Twilio, and off the site --------------------------------
+//
+// Every recording on a message - a call's or a voicemail's - can be taken off
+// Twilio, which saves a copy on the site first (lib/recording-archive.ts), and
+// that copy can then be thrown away. Offered per recording rather than per
+// message because a call can carry more than one.
+
+const ACTION_OFF_TWILIO = 'delete-from-twilio'
+const ACTION_DELETE_COPY = 'delete-saved-copy'
+
+/** The entry a message id names, with the recordings on it. */
+async function entryForMessage(messageId: string): Promise<Entry | null> {
+  const groups = await loadGroups()
+  for (const g of groups) {
+    const found = g.entries.find((e) => e.id === messageId)
+    if (found) return found
+  }
+  return null
+}
+
+function recordingActions(row: ArchiveRow | undefined): {
+  available: boolean
+  note: string | null
+  actions: ConversationAttachmentAction[]
+} {
+  const twilio = onTwilio(row)
+  const copy = hasSavedCopy(row)
+  const actions: ConversationAttachmentAction[] = []
+  if (twilio) {
+    actions.push({
+      id: ACTION_OFF_TWILIO,
+      label: 'Delete from Twilio',
+      confirm: 'Take this recording off Twilio? A copy is saved on the site first, so you can still play it here.',
+    })
+  }
+  if (copy) {
+    actions.push({
+      id: ACTION_DELETE_COPY,
+      label: 'Delete saved copy',
+      confirm: twilio
+        ? 'Delete the copy saved on the site? Twilio still has the recording.'
+        : 'Delete the saved copy? Twilio no longer has this recording, so it will be gone for good.',
+    })
+  }
+  const note = twilio && copy
+    ? 'On Twilio, with a copy saved on the site'
+    : copy
+      ? 'Saved on the site - no longer on Twilio'
+      : twilio
+        ? null
+        : 'Deleted from Twilio and from the site'
+  return { available: twilio || copy, note, actions }
+}
+
+async function attachmentStates(messageId: string): Promise<ConversationAttachmentState[]> {
+  const entry = await entryForMessage(messageId)
+  if (!entry || entry.recordingSids.length === 0) return []
+  const rows = await archiveRowsForSids(entry.recordingSids)
+  return entry.recordingSids.map((sid) => ({
+    url: recordingUrl(entry, sid),
+    ...recordingActions(rows.get(sid)),
+  }))
+}
+
+async function attachmentAction(messageId: string, attachmentUrl: string, actionId: string): Promise<void> {
+  const sid = attachmentUrl.split('?')[0]!.split('/').pop() ?? ''
+  if (!RECORDING_SID.test(sid)) throw new RecordingArchiveError('That is not a recording this site knows about.')
+
+  // Only a recording that is actually on the message named. The url comes from
+  // the browser, and a recording SID on its own would otherwise let anybody
+  // with inbox access reach any recording on the account.
+  const entry = await entryForMessage(messageId)
+  if (!entry || !entry.recordingSids.includes(sid)) {
+    throw new RecordingArchiveError('That recording is not on this message any more.')
+  }
+
+  if (actionId === ACTION_OFF_TWILIO) {
+    const siteNumber = entry.siteNumber ?? ''
+    const region = siteNumber ? await resolveNumberRegion(siteNumber) : getHomeRegion()
+    await removeFromTwilio({ recordingSid: sid, siteNumber, region })
+  } else if (actionId === ACTION_DELETE_COPY) {
+    await deleteSavedCopy(sid)
+  } else {
+    throw new RecordingArchiveError('That cannot be done to a recording.')
+  }
+  forgetCachedConversations()
 }
 
 // --- Blocking --------------------------------------------------------------
@@ -511,7 +639,7 @@ async function isParticipantBlocked(conversationId: string): Promise<boolean> {
 export const twilioConversationProvider: ConversationProvider = {
   label: 'Phone',
   channel: 'phone',
-  capabilities: { reply: true, markRead: false, byIdentity: true, delete: true, block: true },
+  capabilities: { reply: true, markRead: false, byIdentity: true, delete: true, block: true, attachmentActions: true },
   list,
   thread,
   send,
@@ -520,4 +648,6 @@ export const twilioConversationProvider: ConversationProvider = {
   blockParticipant,
   unblockParticipant,
   isParticipantBlocked,
+  attachmentStates,
+  attachmentAction,
 }

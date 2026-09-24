@@ -25,6 +25,10 @@ const resolveNumberRegion = vi.hoisted(() => vi.fn())
 const blockNumber = vi.hoisted(() => vi.fn())
 const unblockNumber = vi.hoisted(() => vi.fn())
 const isNumberBlocked = vi.hoisted(() => vi.fn())
+const archiveRowsForSids = vi.hoisted(() => vi.fn())
+const recordingsOffTwilio = vi.hoisted(() => vi.fn())
+const removeFromTwilio = vi.hoisted(() => vi.fn())
+const deleteSavedCopy = vi.hoisted(() => vi.fn())
 
 class NotBlockableError extends Error {}
 
@@ -34,6 +38,23 @@ vi.mock('./twilio', () => ({
 }))
 vi.mock('./voicemail-log', () => ({ recentVoicemails, deleteVoicemail, filterVoicemailSids, voicemailByCallSid }))
 vi.mock('./call-transcripts', () => ({ callTranscriptsForSids }))
+// The saved-copy store is mocked at its database edge only. hasSavedCopy and
+// onTwilio are the rules the actions offered are built from, so the real ones
+// are used rather than a second copy of them written into the test.
+vi.mock('./recording-archive', async () => {
+  class RecordingArchiveError extends Error {}
+  return {
+    RECORDING_SID: /^RE[a-f0-9]{32}$/i,
+    RecordingArchiveError,
+    archiveRowsForSids,
+    recordingsOffTwilio,
+    removeFromTwilio,
+    deleteSavedCopy,
+    hasSavedCopy: (row: { mediaKey?: string; mediaProvider?: string } | null | undefined) =>
+      !!row && !!row.mediaKey && !!row.mediaProvider,
+    onTwilio: (row: { twilioDeletedAt: Date | null } | null | undefined) => !row || row.twilioDeletedAt === null,
+  }
+})
 vi.mock('./blocked-numbers', () => ({
   NotBlockableError, blockNumber, unblockNumber, isNumberBlocked,
 }))
@@ -89,6 +110,10 @@ beforeEach(() => {
   blockNumber.mockReset().mockResolvedValue('+447700900123')
   unblockNumber.mockReset().mockResolvedValue('+447700900123')
   isNumberBlocked.mockReset().mockResolvedValue(false)
+  archiveRowsForSids.mockReset().mockResolvedValue(new Map())
+  recordingsOffTwilio.mockReset().mockResolvedValue([])
+  removeFromTwilio.mockReset().mockResolvedValue(undefined)
+  deleteSavedCopy.mockReset().mockResolvedValue(undefined)
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.useFakeTimers({ now: new Date('2026-08-27T12:00:00Z') })
@@ -410,6 +435,21 @@ describe('deleting a message', () => {
     expect(deleteVoicemail).toHaveBeenCalledWith(SID)
   })
 
+  it('throws away the copy saved on the site too, and skips Twilio once it has gone from there', async () => {
+    recentVoicemails.mockResolvedValue([
+      { recordingSid: SID, toNumber: '+441134960000' },
+    ])
+    archiveRowsForSids.mockResolvedValue(new Map([[SID, {
+      recordingSid: SID, mediaProvider: 'B2', mediaKey: 'media/twilio/recordings/x.mp3',
+      twilioDeletedAt: new Date('2026-09-01T00:00:00Z'),
+    }]]))
+
+    await expect(provider.deleteMessage!(`voicemail:${SID}`)).resolves.toBe(true)
+    expect(deleteRecording).not.toHaveBeenCalled()
+    expect(deleteSavedCopy).toHaveBeenCalledWith(SID)
+    expect(deleteVoicemail).toHaveBeenCalledWith(SID)
+  })
+
   it('counts a recording we no longer hold as already gone, not as a refusal', async () => {
     recentVoicemails.mockResolvedValue([])
 
@@ -453,5 +493,72 @@ describe('refusing a caller', () => {
   it('says whether they are blocked, so a screen can offer the right button', async () => {
     isNumberBlocked.mockResolvedValue(true)
     await expect(provider.isParticipantBlocked!('+447700900123')).resolves.toBe(true)
+  })
+})
+
+// Every recording - a call's or a voicemail's - can come off Twilio (a copy is
+// saved on the site first) and that copy can then go too. The actions offered
+// have to follow where the recording actually is, or a button offers something
+// that is already done.
+describe('recordings: off Twilio, and off the site', () => {
+  const VM = 'RE00000000000000000000000000000002'
+  const CALL_REC = 'RE00000000000000000000000000000003'
+  const vmUrl = `/api/m/twilio/admin/recordings/${VM}?number=%2B441134960000`
+  const saved = { mediaProvider: 'B2', mediaKey: 'media/twilio/recordings/x.mp3' }
+
+  beforeEach(() => {
+    recentVoicemails.mockResolvedValue([{
+      recordingSid: VM, callSid: 'CA2', fromNumber: '+447700900123', toNumber: '+441134960000',
+      durationSeconds: 12, createdAt: new Date('2026-08-27T08:00:00Z'), transcriptionStatus: '',
+      transcriptionText: '', updatedAt: new Date('2026-08-27T08:00:00Z'),
+    }])
+  })
+
+  it('offers to take a recording off Twilio while it is only there', async () => {
+    const states = await provider.attachmentStates!(`voicemail:${VM}`)
+    expect(states).toEqual([expect.objectContaining({ url: vmUrl, available: true, note: null })])
+    expect(states[0]!.actions.map((a) => a.id)).toEqual(['delete-from-twilio'])
+  })
+
+  it('offers only the saved copy once it has left Twilio', async () => {
+    archiveRowsForSids.mockResolvedValue(new Map([[VM, { ...saved, twilioDeletedAt: new Date() }]]))
+    const [state] = await provider.attachmentStates!(`voicemail:${VM}`)
+    expect(state!.actions.map((a) => a.id)).toEqual(['delete-saved-copy'])
+    expect(state!.note).toMatch(/no longer on Twilio/)
+  })
+
+  it('says a recording deleted everywhere is gone, and stops offering it to play', async () => {
+    archiveRowsForSids.mockResolvedValue(new Map([[VM, { mediaProvider: '', mediaKey: '', twilioDeletedAt: new Date() }]]))
+    const [state] = await provider.attachmentStates!(`voicemail:${VM}`)
+    expect(state).toEqual(expect.objectContaining({ available: false, actions: [] }))
+    const thread = await provider.thread('+447700900123')
+    const vm = thread!.messages.find((m) => m.id === `voicemail:${VM}`)!
+    expect(vm.attachments).toEqual([])
+  })
+
+  it('takes a recording off Twilio in the Region its number is in', async () => {
+    await provider.attachmentAction!(`voicemail:${VM}`, vmUrl, 'delete-from-twilio')
+    expect(removeFromTwilio).toHaveBeenCalledWith({ recordingSid: VM, siteNumber: '+441134960000', region: 'ie1' })
+  })
+
+  it('throws the saved copy away', async () => {
+    await provider.attachmentAction!(`voicemail:${VM}`, vmUrl, 'delete-saved-copy')
+    expect(deleteSavedCopy).toHaveBeenCalledWith(VM)
+  })
+
+  // The url comes from a browser. A recording SID that is not on the message
+  // named would otherwise reach any recording on the account.
+  it('refuses a recording that is not on the message named', async () => {
+    const other = `/api/m/twilio/admin/recordings/${CALL_REC}`
+    await expect(provider.attachmentAction!(`voicemail:${VM}`, other, 'delete-from-twilio')).rejects.toThrow()
+    expect(removeFromTwilio).not.toHaveBeenCalled()
+  })
+
+  it('puts a recording that has left Twilio back on its call', async () => {
+    recordingsOffTwilio.mockResolvedValue([{ recordingSid: CALL_REC, callSid: 'CA1', kept: true }])
+    await provider.thread('+447700900123')
+    expect(listCallsForNumber).toHaveBeenCalledWith('+441134960000', 'ie1', 50, [
+      { recordingSid: CALL_REC, callSid: 'CA1', kept: true },
+    ])
   })
 })
