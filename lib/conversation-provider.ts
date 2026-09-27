@@ -377,6 +377,11 @@ function toMessages(g: Grouped): ConversationMessage[] {
       html: null,
       sentAt: entry.at,
       attachments,
+      // Said outright, because one conversation here holds all three and a
+      // consumer that wants the texts alone - to file a customer's reply
+      // beside the email it answers - must not have to read our ids to find
+      // them.
+      medium: entry.kind === 'sms' ? 'text' : entry.kind,
     }
   })
 }
