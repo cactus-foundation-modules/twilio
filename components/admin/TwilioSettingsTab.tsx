@@ -22,6 +22,7 @@
 // was made in. So the credentials card carries one token field per country,
 // and the routing choice sits per number down in Phone numbers.
 import { useEffect, useState } from 'react'
+import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
 import { TabStrip } from '@/components/admin/TabStrip'
 import { useTabParam } from '@/modules/twilio/lib/admin-tab-url'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
@@ -341,7 +342,7 @@ export function TwilioSettingsTab() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+    <div>
       <TabStrip
         items={SUB_TABS.map((t) => ({
           key: t.key,
@@ -352,6 +353,7 @@ export function TwilioSettingsTab() {
       />
 
       {subTab === 'account' && (
+        <div className="settings-cols">
         <div className="card">
           <h2 className="card-title">Twilio account</h2>
 
@@ -403,6 +405,10 @@ export function TwilioSettingsTab() {
               until it&apos;s right.
             </div>
           ))}
+
+        </div>
+        <div className="card">
+          <h2 className="card-title">Credentials</h2>
 
           {localMode ? (
             <div className="alert alert-warning">
@@ -521,10 +527,13 @@ export function TwilioSettingsTab() {
                 )
               )}
 
-              <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <SettingsHeaderActions>
+                <SettingsHeaderStatus message={saved ? 'Saved. Live after the next deployment.' : null} error={error} />
                 <button className="btn btn-primary" disabled={!hasInput || saving} onClick={handleSave}>
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving ? 'Saving…' : 'Save changes'}
                 </button>
+              </SettingsHeaderActions>
+              <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
                 <button className="btn btn-secondary" disabled={testing} onClick={handleTestConnection}>
                   {testing ? 'Testing…' : 'Test connection'}
                 </button>
@@ -535,6 +544,7 @@ export function TwilioSettingsTab() {
               </p>
             </>
           )}
+        </div>
         </div>
       )}
 
@@ -871,7 +881,7 @@ function AlertsCard() {
             Email me when a call goes unanswered
           </label>
 
-          <div className="field" style={{ maxWidth: '24rem' }}>
+          <div className="field">
             <label htmlFor="twilio-notify-email">Send alerts to</label>
             <input
               id="twilio-notify-email"
@@ -891,7 +901,7 @@ function AlertsCard() {
             night - deleted recordings are gone for good, so pick a period you can live with.
           </p>
 
-          <div className="field" style={{ maxWidth: '16rem' }}>
+          <div className="field">
             <label htmlFor="twilio-retention-days">Keep recordings for (days)</label>
             <input
               id="twilio-retention-days"
@@ -906,9 +916,12 @@ function AlertsCard() {
             </p>
           </div>
 
-          <button className="btn btn-primary" disabled={saving} onClick={save}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          <SettingsHeaderActions>
+            <SettingsHeaderStatus message={saved ? 'Saved' : null} error={error} />
+            <button className="btn btn-primary" disabled={saving} onClick={save}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </SettingsHeaderActions>
         </>
       )}
     </div>

@@ -7,6 +7,7 @@
 // hours sections. Edits are kept per number, so switching numbers does not
 // lose unsaved work - the strip marks a number with unsaved changes.
 import { useEffect, useState } from 'react'
+import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
 import { TabStrip } from '@/components/admin/TabStrip'
 import { TWILIO_VOICES, voiceAvailableInRegion, voiceForRegion } from '@/modules/twilio/lib/voices'
 import {
@@ -1231,20 +1232,20 @@ export function TwilioForwardingSection() {
               </>
               )}
 
-              <div style={{ ...sectionBox, display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <button
-                  className="btn btn-primary"
-                  disabled={savingSid === row.sid || (!leader && row.forwardingEnabled && !row.forwardTo)}
-                  onClick={() => saveRow(row)}
-                >
-                  {savingSid === row.sid ? 'Saving…' : savedSid === row.sid ? 'Saved' : 'Save'}
-                </button>
+              <SettingsHeaderActions>
                 {dirtySids.has(row.sid) && (
                   <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
                     Unsaved changes
                   </span>
                 )}
-              </div>
+                <button
+                  className="btn btn-primary"
+                  disabled={savingSid === row.sid || (!leader && row.forwardingEnabled && !row.forwardTo)}
+                  onClick={() => saveRow(row)}
+                >
+                  {savingSid === row.sid ? 'Saving…' : savedSid === row.sid ? 'Saved' : 'Save changes'}
+                </button>
+              </SettingsHeaderActions>
             </div>
           )}
         </>

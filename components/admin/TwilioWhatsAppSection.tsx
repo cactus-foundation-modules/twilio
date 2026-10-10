@@ -9,6 +9,7 @@
 // has not written in the last day, and a screen that let you type one anyway
 // would be lying to the person pressing Send.
 import { useEffect, useState } from 'react'
+import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
 
 type SiteNumber = { phoneNumber: string; friendlyName: string; region: string }
 
@@ -277,9 +278,12 @@ function SetupCard() {
         </p>
       </div>
 
-      <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
-        {saving ? 'Saving…' : 'Save'}
-      </button>
+      <SettingsHeaderActions>
+        <SettingsHeaderStatus message={saved ? 'Saved' : null} />
+        <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </SettingsHeaderActions>
     </div>
   )
 }

@@ -10,6 +10,7 @@
 // looking for it, and because a site without Twilio has no business being shown
 // a text message editor at all.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
 
 type Template = {
   key: string
@@ -279,9 +280,11 @@ export default function TwilioSmsTemplatesCard() {
               )}
 
               <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', marginBottom: 'var(--space-3)' }}>
-                <button className="btn btn-primary" disabled={saving} onClick={save}>
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
+                <SettingsHeaderActions>
+                  <button className="btn btn-primary" disabled={saving} onClick={save}>
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </SettingsHeaderActions>
                 <button className="btn btn-secondary" onClick={showPreview}>Preview</button>
                 {active.isOverridden && (
                   <button className="btn btn-ghost" disabled={saving} onClick={resetToDefault}>
