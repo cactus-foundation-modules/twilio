@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { TabStrip } from '@/components/admin/TabStrip'
 import { setTabParam } from '@/modules/twilio/lib/admin-tab-url'
 import { callOutcome, type ConnectedLeg } from '@/modules/twilio/lib/call-legs'
+import { InfoTip } from '@/components/admin/InfoTip'
 
 type NumberRow = {
   sid: string
@@ -355,12 +356,7 @@ function BlockedCallersCard({ blocked, error, onChanged }: {
 
   return (
     <div className="card">
-      <h2 className="card-title">Blocked callers</h2>
-      <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', marginTop: 0 }}>
-        Calls from these numbers are refused before anything rings, records or sends. Nothing
-        already in the log is removed - blocking somebody and clearing their history are
-        separate decisions.
-      </p>
+      <h2 className="card-title">Blocked callers <InfoTip>Calls from these numbers are refused before anything rings, records or sends. Nothing already in the log is removed - blocking somebody and clearing their history are separate decisions.</InfoTip></h2>
 
       {error && <div className="alert alert-danger">{error}</div>}
 
@@ -828,7 +824,7 @@ export default function TwilioAdminScreen() {
       />
 
       {active && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+        <div className="settings-col">
           <MakeCallCard fromNumber={active.phoneNumber} />
           <CallLogCard
             calls={logs?.calls ?? null}

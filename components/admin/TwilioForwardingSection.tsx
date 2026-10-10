@@ -19,6 +19,7 @@ import {
   MAX_FORWARD_ATTEMPTS,
   type BusinessHours,
 } from '@/modules/twilio/lib/business-hours'
+import { InfoTip } from '@/components/admin/InfoTip'
 
 // An uploaded greeting audio file on a rule. `pending` marks one uploaded in
 // this session but not yet saved onto the rule - the public audio route only
@@ -684,18 +685,7 @@ export function TwilioForwardingSection() {
   return (
     <div className="settings-cols">
     <div className="card">
-      <h2 className="card-title">Call handling</h2>
-      <p style={{ ...hint, margin: '0 0 var(--space-4)' }}>
-        Choose where each of your Twilio numbers forwards incoming calls, and what happens when
-        nobody picks up. With forwarding and voicemail both off, the number reverts to whatever
-        it did before. If two numbers should behave identically - your text number and your main
-        line, say - tell one to do exactly what the other does and it keeps itself in step from
-        then on. Saving here wires the number up at Twilio automatically - there&apos;s
-        nothing to configure in the Twilio console. If you do go looking there, flip the
-        console&apos;s region switcher (top right) to the same country the number is handled in:
-        each country keeps its own copy of a number&apos;s call settings, so the wrong
-        country&apos;s page just looks empty.
-      </p>
+      <h2 className="card-title">Call handling <InfoTip>Choose where each of your Twilio numbers forwards incoming calls, and what happens when nobody picks up. With forwarding and voicemail both off, the number reverts to whatever it did before. If two numbers should behave identically - your text number and your main line, say - tell one to do exactly what the other does and it keeps itself in step from then on. Saving here wires the number up at Twilio automatically - there&apos;s nothing to configure in the Twilio console. If you do go looking there, flip the console&apos;s region switcher (top right) to the same country the number is handled in: each country keeps its own copy of a number&apos;s call settings, so the wrong country&apos;s page just looks empty.</InfoTip></h2>
 
       {error && <div className="alert alert-danger">{error}</div>}
 
@@ -965,14 +955,8 @@ export function TwilioForwardingSection() {
                       onChange={(e) => updateRow(row.sid, { transcribeCalls: e.target.checked })}
                     />
                     Type up recorded calls
+                    <InfoTip>Twilio writes out what was said and files it with the call, so you can read a conversation instead of sitting through it. It appears a few minutes after the call ends. <strong>This one costs money</strong> - Twilio charges by the minute for every recorded call on this number, on top of the call itself, so leave it off unless you will genuinely read them.</InfoTip>
                   </label>
-                  <p style={{ ...hint, marginTop: 'var(--space-2)' }}>
-                    Twilio writes out what was said and files it with the call, so you can read a
-                    conversation instead of sitting through it. It appears a few minutes after the
-                    call ends. <strong>This one costs money</strong> - Twilio charges by the minute
-                    for every recorded call on this number, on top of the call itself, so leave it
-                    off unless you will genuinely read them.
-                  </p>
                 </>
               )}
               <div className="field" style={{ margin: 'var(--space-4) 0 0', maxWidth: '24rem' }}>
@@ -1006,7 +990,7 @@ export function TwilioForwardingSection() {
                 </label>
                 {row.missedCallSmsEnabled && (
                   <div className="field" style={{ margin: 'var(--space-3) 0 0', maxWidth: '32rem' }}>
-                    <label>The message</label>
+                    <label>The message <InfoTip>Sent from this number where it can text, otherwise from the site&apos;s usual texting number. Callers who withheld their number can&apos;t be texted back.</InfoTip></label>
                     <textarea
                       rows={2}
                       maxLength={320}
@@ -1014,10 +998,6 @@ export function TwilioForwardingSection() {
                       placeholder="Sorry we missed your call - we will ring you back as soon as we can."
                       onChange={(e) => updateRow(row.sid, { missedCallSmsMessage: e.target.value })}
                     />
-                    <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }}>
-                      Sent from this number where it can text, otherwise from the site&apos;s usual
-                      texting number. Callers who withheld their number can&apos;t be texted back.
-                    </p>
                   </div>
                 )}
               </div>

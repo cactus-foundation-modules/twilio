@@ -11,6 +11,7 @@
 // a text message editor at all.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
+import { InfoTip } from '@/components/admin/InfoTip'
 
 type Template = {
   key: string
@@ -165,9 +166,9 @@ export default function TwilioSmsTemplatesCard() {
       <div className="settings-cols">
         <div className="card">
           <h2 className="card-title">Templates</h2>
-          <p style={mutedText}>
-            Nothing on this site sends a text message yet. Modules that do - the shop&apos;s order
-            updates, for one - add their messages here as soon as they&apos;re installed.
+          <p className="field-hint">
+            Nothing on this site sends a text message yet. Modules that do - the shop&apos;s order updates, for one - add
+            their messages here as soon as they&apos;re installed.
           </p>
         </div>
       </div>
@@ -177,11 +178,7 @@ export default function TwilioSmsTemplatesCard() {
   return (
     <div className="settings-cols">
     <div className="card">
-      <h2 className="card-title">Templates</h2>
-      <p style={mutedText}>
-        The wording of every text your site sends. Keep them short - each message is charged by
-        the segment, and the counter below tells you how many you&apos;re paying for.
-      </p>
+      <h2 className="card-title">Templates <InfoTip>The wording of every text your site sends. Keep them short - each message is charged by the segment, and the counter below tells you how many you&apos;re paying for.</InfoTip></h2>
 
       {!smsAvailable && (
         <div className="alert alert-warning">

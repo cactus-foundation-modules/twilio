@@ -29,6 +29,7 @@ import { TwilioForwardingSection } from './TwilioForwardingSection'
 import TwilioAdminScreen from './TwilioAdminScreen'
 import TwilioSmsTemplatesCard from './TwilioSmsTemplatesCard'
 import TwilioWhatsAppSection from './TwilioWhatsAppSection'
+import { InfoTip } from '@/components/admin/InfoTip'
 
 const ACCOUNT_SID_KEY = { key: 'TWILIO_ACCOUNT_SID', label: 'Account SID', placeholder: 'AC…' } as const
 const MAIN_TOKEN_KEY = 'TWILIO_AUTH_TOKEN'
@@ -417,7 +418,7 @@ export function TwilioSettingsTab() {
           ) : (
             <>
               <div className="field">
-                <label htmlFor="twilio-home-region">Twilio account country</label>
+                <label htmlFor="twilio-home-region">Twilio account country <InfoTip>The country your Twilio account itself lives in - shown on the auth-token page of the Twilio console. The Account SID and main auth token below must be the ones for this country, or Twilio rejects them with an &ldquo;Authenticate&rdquo; error.</InfoTip></label>
                 <select
                   id="twilio-home-region"
                   value={homeRegion}
@@ -427,11 +428,6 @@ export function TwilioSettingsTab() {
                     <option key={r} value={r}>{REGION_LABELS[r]}</option>
                   ))}
                 </select>
-                <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
-                  The country your Twilio account itself lives in - shown on the auth-token page of
-                  the Twilio console. The Account SID and main auth token below must be the ones for
-                  this country, or Twilio rejects them with an &ldquo;Authenticate&rdquo; error.
-                </p>
               </div>
 
               <div className="field">
@@ -481,14 +477,8 @@ export function TwilioSettingsTab() {
                     }}
                   >
                     Other countries
+                    <InfoTip>Only needed if you route a number to another country (set per number on the Phone numbers tab). Twilio issues a <strong>separate</strong> token for each country - your main token won&apos;t work there. Find them in the Twilio console under API keys &amp; tokens, with the country picked in the Region dropdown. Leave blank if you don&apos;t use them.</InfoTip>
                   </h3>
-                  <p style={mutedText}>
-                    Only needed if you route a number to another country (set per number on the
-                    Phone numbers tab). Twilio issues a <strong>separate</strong> token for each
-                    country - your main token won&apos;t work there. Find them in the Twilio console
-                    under API keys &amp; tokens, with the country picked in the Region dropdown.
-                    Leave blank if you don&apos;t use them.
-                  </p>
                   {REGION_OPTIONS.filter((r) => r !== homeRegion).map((r) => {
                     const key = regionTokenKey(r, homeRegion)
                     return (
@@ -552,12 +542,7 @@ export function TwilioSettingsTab() {
         !connected ? connectFirst : (
           <div className="settings-cols">
           <div className="card">
-            <h2 className="card-title">Phone numbers</h2>
-            <p style={{ ...mutedText, margin: '0 0 var(--space-4)' }}>
-              These are the numbers on your Twilio account. Add the ones you want this site to
-              use, then choose which one sign-in codes are texted from. Only numbers that can
-              send texts are offered for texting.
-            </p>
+            <h2 className="card-title">Phone numbers <InfoTip>These are the numbers on your Twilio account. Add the ones you want this site to use, then choose which one sign-in codes are texted from. Only numbers that can send texts are offered for texting.</InfoTip></h2>
 
             {numbersError && <div className="alert alert-danger">{numbersError}</div>}
 
@@ -841,19 +826,10 @@ function AlertsCard() {
     }
   }
 
-  const checkboxRow: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    cursor: 'pointer',
-    color: 'var(--color-text)',
-    marginBottom: 'var(--space-3)',
-  }
-
   return (
     <div className="settings-cols">
     <div className="card">
-      <h2 className="card-title">Alerts &amp; data</h2>
+      <h2 className="card-title">Alerts &amp; data <InfoTip>Email alerts land the moment something happens on your numbers - no need to keep an eye on the call log. These changes apply straight away, no deployment needed.</InfoTip></h2>
 
       {loadError && <div className="alert alert-danger">{loadError}</div>}
 
@@ -861,15 +837,11 @@ function AlertsCard() {
         !loadError && <p style={{ color: 'var(--color-text-secondary)' }}>Loading…</p>
       ) : (
         <>
-          <p style={mutedText}>
-            Email alerts land the moment something happens on your numbers - no need to keep an
-            eye on the call log. These changes apply straight away, no deployment needed.
-          </p>
 
           {error && <div className="alert alert-danger">{error}</div>}
           {saved && <div className="alert alert-success">Saved.</div>}
 
-          <label style={checkboxRow}>
+          <label className="settings-check">
             <input
               type="checkbox"
               checked={settings.notifyVoicemailEmail}
@@ -877,7 +849,7 @@ function AlertsCard() {
             />
             Email me when someone leaves a voicemail
           </label>
-          <label style={checkboxRow}>
+          <label className="settings-check">
             <input
               type="checkbox"
               checked={settings.notifyMissedCallEmail}
@@ -897,17 +869,11 @@ function AlertsCard() {
             />
           </div>
 
-          <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-semibold)', color: 'var(--color-text)', margin: 'var(--space-5) 0 var(--space-1)' }}>
-            Keeping recordings
-          </h3>
-          <p style={mutedText}>
-            Call recordings and voicemails sit in your Twilio account until something deletes
-            them. Set a keep-for period and anything older is cleared out automatically each
-            night - deleted recordings are gone for good, so pick a period you can live with.
-          </p>
-
           <div className="field">
-            <label htmlFor="twilio-retention-days">Keep recordings for (days)</label>
+            <label htmlFor="twilio-retention-days">
+              Keep recordings for (days)
+              <InfoTip>Call recordings and voicemails sit in your Twilio account until something deletes them. Set a keep-for period and anything older is cleared out automatically each night - deleted recordings are gone for good, so pick a period you can live with.</InfoTip>
+            </label>
             <input
               id="twilio-retention-days"
               type="number"
@@ -916,9 +882,7 @@ function AlertsCard() {
               value={settings.retentionDays}
               onChange={(e) => set('retentionDays', Math.max(0, Math.floor(Number(e.target.value) || 0)))}
             />
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)', margin: 'var(--space-1) 0 0' }}>
-              0 keeps everything forever - the way it&apos;s always worked.
-            </p>
+            <span className="field-hint">0 keeps everything forever - the way it&apos;s always worked.</span>
           </div>
 
           <SettingsHeaderActions>

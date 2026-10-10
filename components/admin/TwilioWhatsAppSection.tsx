@@ -10,6 +10,7 @@
 // would be lying to the person pressing Send.
 import { useEffect, useState } from 'react'
 import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/SettingsHeaderActions'
+import { InfoTip } from '@/components/admin/InfoTip'
 
 type SiteNumber = { phoneNumber: string; friendlyName: string; region: string }
 
@@ -192,11 +193,7 @@ function SetupCard() {
 
   return (
     <div className="card">
-      <h2 className="card-title">WhatsApp</h2>
-      <p style={mutedText}>
-        Twilio carries WhatsApp on the same account as your calls and texts. Messages turn up in
-        your inbox beside everything else, and you can answer them from there.
-      </p>
+      <h2 className="card-title">WhatsApp <InfoTip>Twilio carries WhatsApp on the same account as your calls and texts. Messages turn up in your inbox beside everything else, and you can answer them from there.</InfoTip></h2>
 
       <details style={{ marginBottom: 'var(--space-4)' }}>
         <summary style={{ cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
@@ -263,7 +260,7 @@ function SetupCard() {
       )}
 
       <div className="field">
-        <label htmlFor="twilio-wa-region">Handled in</label>
+        <label htmlFor="twilio-wa-region">Handled in <InfoTip>Where WhatsApp itself handles this number, which is often not the country its calls and texts are handled in. Messages are looked for everywhere your account reaches, so this only decides where the first message to somebody brand new is sent from.</InfoTip></label>
         <select id="twilio-wa-region" value={region} onChange={(e) => setRegion(e.target.value)}>
           {REGION_OPTIONS.map((r) => (
             <option key={r} value={r}>
@@ -271,11 +268,6 @@ function SetupCard() {
             </option>
           ))}
         </select>
-        <p style={{ ...mutedText, margin: 'var(--space-1) 0 0' }}>
-          Where WhatsApp itself handles this number, which is often not the country its calls and
-          texts are handled in. Messages are looked for everywhere your account reaches, so this
-          only decides where the first message to somebody brand new is sent from.
-        </p>
       </div>
 
       <SettingsHeaderActions>
@@ -349,13 +341,7 @@ function TemplatesCard() {
 
   return (
     <div className="card">
-      <h2 className="card-title">Approved templates</h2>
-      <p style={mutedText}>
-        Wording WhatsApp has approved in advance. It is the only thing that will reach somebody who
-        has not written to you in the last 24 hours - a delivery update, an appointment reminder,
-        that sort of thing. Write them in the Twilio console under Content Template Builder, then
-        add each one here with the id Twilio gives it.
-      </p>
+      <h2 className="card-title">Approved templates <InfoTip>Wording WhatsApp has approved in advance. It is the only thing that will reach somebody who has not written to you in the last 24 hours - a delivery update, an appointment reminder, that sort of thing. Write them in the Twilio console under Content Template Builder, then add each one here with the id Twilio gives it.</InfoTip></h2>
 
       {error && <div className="alert alert-danger">{error}</div>}
 
@@ -499,12 +485,7 @@ function SendCard() {
 
   return (
     <div className="card">
-      <h2 className="card-title">Send a message</h2>
-      <p style={mutedText}>
-        A plain message only reaches somebody who has written to you in the last 24 hours. Outside
-        that, send one of your approved templates - this will tell you which of the two applies
-        rather than letting a message quietly go nowhere.
-      </p>
+      <h2 className="card-title">Send a message <InfoTip>A plain message only reaches somebody who has written to you in the last 24 hours. Outside that, send one of your approved templates - this will tell you which of the two applies rather than letting a message quietly go nowhere.</InfoTip></h2>
 
       {error && <div className="alert alert-danger">{error}</div>}
       {sentFrom && (
