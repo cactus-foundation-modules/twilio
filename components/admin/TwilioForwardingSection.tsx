@@ -682,6 +682,7 @@ export function TwilioForwardingSection() {
   const numberLabel = (n: NumberRow) => (n.friendlyName ? `${n.phoneNumber} (${n.friendlyName})` : n.phoneNumber)
 
   return (
+    <div className="settings-cols">
     <div className="card">
       <h2 className="card-title">Call handling</h2>
       <p style={{ ...hint, margin: '0 0 var(--space-4)' }}>
@@ -1250,6 +1251,7 @@ export function TwilioForwardingSection() {
           )}
         </>
       )}
+    </div>
     </div>
   )
 }

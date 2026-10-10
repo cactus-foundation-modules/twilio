@@ -162,17 +162,20 @@ export default function TwilioSmsTemplatesCard() {
 
   if (allTemplates.length === 0) {
     return (
-      <div className="card">
-        <h2 className="card-title">Templates</h2>
-        <p style={mutedText}>
-          Nothing on this site sends a text message yet. Modules that do - the shop&apos;s order
-          updates, for one - add their messages here as soon as they&apos;re installed.
-        </p>
+      <div className="settings-cols">
+        <div className="card">
+          <h2 className="card-title">Templates</h2>
+          <p style={mutedText}>
+            Nothing on this site sends a text message yet. Modules that do - the shop&apos;s order
+            updates, for one - add their messages here as soon as they&apos;re installed.
+          </p>
+        </div>
       </div>
     )
   }
 
   return (
+    <div className="settings-cols">
     <div className="card">
       <h2 className="card-title">Templates</h2>
       <p style={mutedText}>
@@ -336,6 +339,7 @@ export default function TwilioSmsTemplatesCard() {
           )}
         </div>
       </div>
+    </div>
     </div>
   )
 }

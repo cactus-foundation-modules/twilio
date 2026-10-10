@@ -117,7 +117,7 @@ async function fetchLog(): Promise<Log> {
 
 export default function TwilioWhatsAppSection() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+    <div className="settings-cols">
       <SetupCard />
       <TemplatesCard />
       <SendCard />
@@ -220,7 +220,7 @@ function SetupCard() {
       {error && <div className="alert alert-danger">{error}</div>}
       {saved && <div className="alert alert-success">Saved.</div>}
 
-      <div className="field">
+      <div className="field field--wide">
         <label htmlFor="twilio-wa-enabled" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <input
             id="twilio-wa-enabled"
@@ -583,7 +583,7 @@ function SendCard() {
         </>
       )}
 
-      <button type="button" className="btn btn-primary" onClick={send} disabled={sending || !ready}>
+      <button type="button" className="btn btn-primary" style={{ justifySelf: 'start' }} onClick={send} disabled={sending || !ready}>
         {sending ? 'Sending…' : 'Send'}
       </button>
     </div>
@@ -643,7 +643,7 @@ function LogCard() {
             Everything to and from <strong>{log.sender}</strong>, newest first. Twilio keeps these,
             so how far back this goes is up to your Twilio account rather than to this site.
           </p>
-          <button type="button" className="btn btn-secondary" onClick={refresh} disabled={loading}>
+          <button type="button" className="btn btn-secondary" style={{ justifySelf: 'start' }} onClick={refresh} disabled={loading}>
             {loading ? 'Reading…' : 'Refresh'}
           </button>
         </>

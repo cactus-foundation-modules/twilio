@@ -550,6 +550,7 @@ export function TwilioSettingsTab() {
 
       {subTab === 'numbers' && (
         !connected ? connectFirst : (
+          <div className="settings-cols">
           <div className="card">
             <h2 className="card-title">Phone numbers</h2>
             <p style={{ ...mutedText, margin: '0 0 var(--space-4)' }}>
@@ -689,6 +690,7 @@ export function TwilioSettingsTab() {
               </p>
             )}
           </div>
+          </div>
         )
       )}
 
@@ -738,6 +740,7 @@ function TextingCard({ status }: { status: Status | null }) {
   }
 
   return (
+    <div className="settings-cols">
     <div className="card">
       <h2 className="card-title">Texting</h2>
       {fromNumber ? (
@@ -786,6 +789,7 @@ function TextingCard({ status }: { status: Status | null }) {
           {sending ? 'Sending…' : 'Send test text'}
         </button>
       </div>
+    </div>
     </div>
   )
 }
@@ -847,6 +851,7 @@ function AlertsCard() {
   }
 
   return (
+    <div className="settings-cols">
     <div className="card">
       <h2 className="card-title">Alerts &amp; data</h2>
 
@@ -924,6 +929,7 @@ function AlertsCard() {
           </SettingsHeaderActions>
         </>
       )}
+    </div>
     </div>
   )
 }
