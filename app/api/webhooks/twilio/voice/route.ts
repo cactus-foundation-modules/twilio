@@ -12,6 +12,7 @@ import { voiceForRegion } from '@/modules/twilio/lib/voices'
 import { dialActionUrl, transcriptionDialAttrs, voicemailTwiml } from '@/modules/twilio/lib/voicemail'
 import { getTwilioSettings } from '@/modules/twilio/lib/settings'
 import { isNumberBlocked } from '@/modules/twilio/lib/blocked-numbers'
+import { offerCallToHandlers } from '@/modules/twilio/lib/inbound-call-handlers'
 
 const E164 = /^\+[1-9]\d{7,14}$/
 
@@ -76,6 +77,20 @@ export async function POST(request: NextRequest) {
   // normalisePhone enforced that on the way in.
   const canForward =
     rule.enabled && E164.test(rule.forwardTo) && open && !(anonymous && rule.anonymousCallers === 'voicemail')
+
+  // A module may answer the call itself (lib/inbound-call-handlers.ts). Asked
+  // here, with the number's own verdict on whether it would ring a phone, so a
+  // handler can answer only when nobody would pick up. A handler that declines
+  // or fails changes nothing below.
+  const handled = await offerCallToHandlers({
+    callSid: params.CallSid ?? '',
+    from: anonymous ? '' : (params.From ?? ''),
+    to: called,
+    anonymous,
+    open,
+    wouldForward: canForward,
+  })
+  if (handled) return twiml(handled)
 
   if (!canForward) {
     // Forwarding off, no usable target, the number shut for the day, or a

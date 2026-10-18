@@ -1,6 +1,6 @@
 {
   "name": "twilio",
-  "version": "0.1.49",
+  "version": "0.1.50",
   "tablePrefix": "tw_",
   "notificationKinds": [
     {"id": "voicemail", "label": "New voicemails", "description": "Somebody left a voicemail.", "dedupePrefix": "twilio-voicemail:"}

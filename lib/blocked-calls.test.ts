@@ -13,6 +13,7 @@ const resolveNumberRegion = vi.hoisted(() => vi.fn())
 const validateTwilioSignature = vi.hoisted(() => vi.fn())
 const isTwilioConfigured = vi.hoisted(() => vi.fn())
 const getTwilioSettings = vi.hoisted(() => vi.fn())
+const offerCallToHandlers = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/config/env', () => ({ getSiteUrl: () => 'https://example.test' }))
 vi.mock('@/modules/twilio/lib/twilio', () => ({
@@ -33,6 +34,7 @@ vi.mock('@/modules/twilio/lib/voicemail', () => ({
 }))
 vi.mock('@/modules/twilio/lib/settings', () => ({ getTwilioSettings }))
 vi.mock('@/modules/twilio/lib/blocked-numbers', () => ({ isNumberBlocked }))
+vi.mock('@/modules/twilio/lib/inbound-call-handlers', () => ({ offerCallToHandlers }))
 
 const { POST } = await import('../app/api/webhooks/twilio/voice/route')
 
@@ -79,6 +81,7 @@ beforeEach(() => {
   resolveNumberRegion.mockResolvedValue('ie1')
   getTwilioSettings.mockResolvedValue({ notifyMissedCallEmail: false, notifyEmail: '' })
   isNumberBlocked.mockResolvedValue(false)
+  offerCallToHandlers.mockResolvedValue(null)
 })
 
 describe('a blocked caller', () => {
@@ -124,5 +127,36 @@ describe('everybody else', () => {
     expect(await response.text()).toContain('<Dial')
     expect(isNumberBlocked).toHaveBeenCalledWith(ALLOWED)
     expect(getRuleForNumber).toHaveBeenCalledWith(SITE_NUMBER)
+  })
+})
+
+// A module may answer a call itself (lib/inbound-call-handlers.ts). Where it
+// sits matters as much as the block does: after the block, so a blocked caller
+// never reaches an assistant that costs money by the minute.
+describe('another module answering the call', () => {
+  it('is never offered a blocked call', async () => {
+    isNumberBlocked.mockResolvedValue(true)
+    await POST(request(BLOCKED) as never)
+    expect(offerCallToHandlers).not.toHaveBeenCalled()
+  })
+
+  it('answers instead of forwarding when it returns TwiML', async () => {
+    offerCallToHandlers.mockResolvedValue('<Connect><Stream url="wss://example.test"/></Connect>')
+    const response = await POST(request(ALLOWED) as never)
+    const body = await response.text()
+    expect(body).toContain('<Connect>')
+    expect(body).not.toContain('<Dial')
+  })
+
+  it('is told what the number itself would have done', async () => {
+    await POST(request(ALLOWED) as never)
+    expect(offerCallToHandlers).toHaveBeenCalledWith(expect.objectContaining({
+      to: SITE_NUMBER, from: ALLOWED, open: true, wouldForward: true, anonymous: false,
+    }))
+  })
+
+  it('leaves forwarding alone when it declines', async () => {
+    const response = await POST(request(ALLOWED) as never)
+    expect(await response.text()).toContain('<Dial')
   })
 })
