@@ -69,3 +69,12 @@ describe('offerCallToHandlers', () => {
     expect(await offerCallToHandlers(call)).toBeNull()
   })
 })
+
+describe('unanswered offer', () => {
+  it('passes the unanswered flag through to the handler', async () => {
+    let seen: InboundCallContext | null = null
+    install([{ module: 'a', id: 'a', handler: async (c: InboundCallContext) => { seen = c; return '<Connect/>' } }])
+    expect(await offerCallToHandlers({ ...call, unanswered: true })).toBe('<Connect/>')
+    expect((seen as InboundCallContext | null)?.unanswered).toBe(true)
+  })
+})

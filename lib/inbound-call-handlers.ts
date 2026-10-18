@@ -39,6 +39,11 @@ export type InboundCallContext = {
   open: boolean
   /** Whether the number's own rules would ring a phone for this call. */
   wouldForward: boolean
+  /** True when this is the SECOND time the call is offered: the number's
+   *  forwarding rang every phone it was set to ring, as many times as it was set
+   *  to, and nobody answered. A handler that answers only "when nobody else
+   *  does" takes the call here. Absent on the first offer. */
+  unanswered?: boolean
 }
 
 /** Returns the inner TwiML (what goes between `<Response>` tags) to answer the
@@ -49,6 +54,14 @@ type ExtensionPointEntry = { point: string; id: string }
 
 function isHandler(value: unknown): value is InboundCallHandler {
   return typeof value === 'function'
+}
+
+/** Whether any module publishes a handler at all. The voice webhook asks so that
+ *  a forwarded call with no other follow-up still reports back when it rings
+ *  out - otherwise nothing would ever offer it to the handler. */
+export async function hasInboundCallHandlers(): Promise<boolean> {
+  const { moduleServerExtensionPointComponents } = await import('@/lib/modules/extension-points.server')
+  return Object.keys(moduleServerExtensionPointComponents[INBOUND_CALL_HANDLER_POINT] ?? {}).length > 0
 }
 
 /** Offers the call to every installed handler in manifest order. The first to

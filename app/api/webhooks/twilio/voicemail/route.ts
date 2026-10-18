@@ -35,6 +35,7 @@ import { recordVoicemail } from '@/modules/twilio/lib/voicemail-log'
 import { sendMissedCallEmail, sendMissedCallText } from '@/modules/twilio/lib/notify'
 import { escapeXml } from '@/modules/twilio/lib/twilio'
 import type { ForwardingRule } from '@/modules/twilio/lib/forwarding'
+import { offerCallToHandlers } from '@/modules/twilio/lib/inbound-call-handlers'
 
 const E164 = /^\+[1-9]\d{7,14}$/
 
@@ -144,8 +145,25 @@ export async function POST(request: NextRequest) {
   }
 
   if (plan.action === 'take-message') {
-    // Every leg rang out: the call is missed, whatever happens next. The
-    // auto-text and email alert fire exactly once, here.
+    // Every leg rang out. Before the call is written off as missed, a module
+    // that answers calls nobody else picked up (a voice assistant) is offered
+    // it. If one takes it the call was NOT missed, so the auto-text and email
+    // alert stay quiet and voicemail is never reached. A handler that declines
+    // or fails changes nothing below.
+    const callerNumber = params.From ?? ''
+    const anonymous = !E164.test(callerNumber) || callerNumber === '+266696687'
+    const handled = await offerCallToHandlers({
+      callSid: params.CallSid ?? '',
+      from: anonymous ? '' : callerNumber,
+      to: called,
+      anonymous,
+      open: true,
+      wouldForward: true,
+      unanswered: true,
+    })
+    if (handled) return twiml(handled)
+    // The call is missed, whatever happens next. The auto-text and email alert
+    // fire exactly once, here.
     if (rule) await notifyMissedCall(rule, params.From ?? '')
     // The rule could have had voicemail switched off mid-call. Hanging up beats
     // recording a message nobody has anywhere to listen to.

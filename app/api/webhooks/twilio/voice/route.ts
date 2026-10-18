@@ -12,7 +12,7 @@ import { voiceForRegion } from '@/modules/twilio/lib/voices'
 import { dialActionUrl, transcriptionDialAttrs, voicemailTwiml } from '@/modules/twilio/lib/voicemail'
 import { getTwilioSettings } from '@/modules/twilio/lib/settings'
 import { isNumberBlocked } from '@/modules/twilio/lib/blocked-numbers'
-import { offerCallToHandlers } from '@/modules/twilio/lib/inbound-call-handlers'
+import { hasInboundCallHandlers, offerCallToHandlers } from '@/modules/twilio/lib/inbound-call-handlers'
 
 const E164 = /^\+[1-9]\d{7,14}$/
 
@@ -131,7 +131,8 @@ export async function POST(request: NextRequest) {
     rule.forwardAttempts > 1 ||
     E164.test(rule.forwardToSecond) ||
     rule.missedCallSmsEnabled ||
-    (settings.notifyMissedCallEmail && settings.notifyEmail !== '')
+    (settings.notifyMissedCallEmail && settings.notifyEmail !== '') ||
+    (await hasInboundCallHandlers())
   // This is the first ring of the first number, which is what dialActionUrl(1, 1)
   // spells out - it is the plain voicemail webhook URL, markers and all omitted.
   const actionAttrs = needsDialAction
