@@ -26,6 +26,7 @@ import { SettingsHeaderActions, SettingsHeaderStatus } from '@/components/admin/
 import { TabStrip } from '@/components/admin/TabStrip'
 import { useTabParam } from '@/modules/twilio/lib/admin-tab-url'
 import { TwilioForwardingSection } from './TwilioForwardingSection'
+import { TwilioInboxHookupCard } from './TwilioInboxHookupCard'
 import TwilioAdminScreen from './TwilioAdminScreen'
 import TwilioSmsTemplatesCard from './TwilioSmsTemplatesCard'
 import TwilioWhatsAppSection from './TwilioWhatsAppSection'
@@ -679,7 +680,7 @@ export function TwilioSettingsTab() {
         )
       )}
 
-      {subTab === 'calls' && (!connected ? connectFirst : <TwilioForwardingSection />)}
+      {subTab === 'calls' && (!connected ? connectFirst : (<><TwilioForwardingSection /><TwilioInboxHookupCard /></>))}
 
       {subTab === 'texting' && (!connected ? connectFirst : <TextingCard status={status} />)}
 

@@ -25,6 +25,7 @@ import {
   setSiteNumberRegion,
   syncSiteNumbers,
 } from '@/modules/twilio/lib/numbers'
+import { connectNumberQuietly } from '@/modules/twilio/lib/inbox-hookup'
 
 async function mergedListing(opts?: { refreshRegions?: boolean }) {
   const account = await listIncomingNumbers()
@@ -116,6 +117,7 @@ export async function POST(request: NextRequest) {
         smsCapable: match.smsCapable,
         region: current,
       })
+      await connectNumberQuietly(match.sid, match.phoneNumber, current)
     } else if (action === 'remove') {
       await removeSiteNumber(sid)
     } else if (action === 'set-region') {

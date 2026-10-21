@@ -7,6 +7,7 @@ import { hasPermission } from '@/lib/permissions/check'
 import { errorResponse } from '@/lib/utils'
 import { getSiteUrl } from '@/lib/config/env'
 import { isTwilioConfigured, setNumberVoiceUrl } from '@/modules/twilio/lib/twilio'
+import { connectNumberQuietly } from '@/modules/twilio/lib/inbox-hookup'
 import {
   getFollowers,
   getRuleBySid,
@@ -236,6 +237,7 @@ export async function PUT(request: NextRequest) {
       : enabled || voicemailEnabled
     const region = await resolveNumberRegion(phoneNumber)
     await setNumberVoiceUrl(phoneSid, answering ? webhookUrl : '', region)
+    await connectNumberQuietly(phoneSid, phoneNumber, region)
     await upsertForwardingRule({
       phoneSid,
       phoneNumber,
