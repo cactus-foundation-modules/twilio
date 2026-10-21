@@ -401,9 +401,12 @@ export function forgetCachedConversations(): void {
   slot = null
 }
 
-function loadGroups(): Promise<Grouped[]> {
+/** `fresh` skips the cache. The inbox's copy-across passes `since`, and it must
+ *  see what a webhook just announced - the cache lives in one server instance's
+ *  memory, and the instance that fetches need not be the one that last read. */
+function loadGroups(fresh = false): Promise<Grouped[]> {
   const now = Date.now()
-  if (slot && now - slot.at < CACHE_TTL_MS) return slot.promise
+  if (!fresh && slot && now - slot.at < CACHE_TTL_MS) return slot.promise
   const promise = collectEntries().then(({ entries, ours }) => group(entries, ours))
   const mine = { promise, at: now }
   slot = mine
@@ -416,7 +419,7 @@ function loadGroups(): Promise<Grouped[]> {
 }
 
 async function list(opts: ConversationListOptions): Promise<ConversationListPage> {
-  const groups = await loadGroups()
+  const groups = await loadGroups(Boolean(opts.since))
   const since = opts.since?.getTime() ?? null
   const before = opts.cursor ? Date.parse(opts.cursor) : null
 

@@ -19,6 +19,7 @@
 //
 // https://www.twilio.com/docs/global-infrastructure/understanding-twilio-regions
 import { createHmac, timingSafeEqual } from 'crypto'
+import { getSiteUrl } from '@/lib/config/env'
 import { foldDialLegs, type CallLogEntry } from './call-legs'
 
 export const TWILIO_REGIONS = ['us1', 'ie1', 'au1'] as const
@@ -372,6 +373,13 @@ export async function setNumberRegion(phoneNumber: string, region: TwilioRegion)
 // Account resources
 // ---------------------------------------------------------------------------
 
+// Where Twilio reports a call ending or a text changing state, so the unified
+// inbox hears of it at once. Numbers' own webhooks are set in the Twilio
+// console; this one rides on the calls and texts the site itself places.
+function activityWebhookUrl(): string {
+  return `${getSiteUrl()}/api/m/twilio/webhooks/activity`
+}
+
 // `from` must be an SMS-capable Twilio number on the account - callers go
 // through lib/numbers.ts sendSiteSms, which resolves the site's default and its
 // Region. The Region decides where the message is processed and stored.
@@ -383,7 +391,7 @@ export async function sendSms(
 ): Promise<void> {
   await twilioFetch('/Messages.json', {
     method: 'POST',
-    form: { To: to, From: from, Body: body },
+    form: { To: to, From: from, Body: body, StatusCallback: activityWebhookUrl() },
     region,
   })
 }
@@ -604,7 +612,13 @@ export async function placeCall(
 ): Promise<void> {
   await twilioFetch('/Calls.json', {
     method: 'POST',
-    form: { To: to, From: from, Twiml: twiml },
+    form: {
+      To: to,
+      From: from,
+      Twiml: twiml,
+      StatusCallback: activityWebhookUrl(),
+      StatusCallbackEvent: 'completed',
+    },
     region,
   })
 }
